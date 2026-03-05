@@ -58,6 +58,12 @@ Uses classical CV methods. 5 stages:
 - Replace homography with STTN (Spatial-Temporal Transformer Network)
 - Replace histogram matching with TPM (Temporal Propagation Module)
 
+**Frontalization difference (Stage B vs STRIVE):**
+- Stage B does NOT do true frontalization. The reference frame's natural perspective is treated as "frontal". S2 only computes the geometric mapping (H_to_ref / H_from_ref) between frames. The edited ROI is propagated outward from ref via H_from_ref in S5.
+- STRIVE uses STTN to warp every frame's ROI to a canonical frontal rectangle, edits text in that normalized space, then transfers back. STTN sees multiple frames jointly for temporal consistency.
+- Classical frontalization (getPerspectiveTransform quad→rect) is feasible for planar text but doesn't handle non-planar surfaces, motion blur, or temporal smoothness like STTN does.
+- If implementing Stage C: replace S2's optical flow + homography with STTN, and the pipeline would need an explicit frontalize→edit→de-frontalize flow instead of the current ref-centric propagation.
+
 ## Key Architecture Decisions
 
 - **Central data structure**: `TextTrack` flows through all 5 stages. S1 creates it, S2-S5 enrich it.
