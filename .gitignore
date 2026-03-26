@@ -33,5 +33,7 @@ Thumbs.db
 code/debug_output/
 _refs/
 
-# Claude Code
-.claude/
+# Claude Code (track commands/agents/skills, ignore local files)
+.claude/local.md
+.claude/settings.local.json
+.claude/plans/
