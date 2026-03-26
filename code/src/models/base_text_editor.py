@@ -30,6 +30,6 @@ class BaseTextEditor(ABC):
         """
         ...
 
-    def load_model(self, model_path: str, device: str = "cpu") -> None:
+    def load_model(self, model_path: str, device: str = "cpu") -> None:  # noqa: B027
         """Optionally load model weights. Not needed for placeholder."""
         pass

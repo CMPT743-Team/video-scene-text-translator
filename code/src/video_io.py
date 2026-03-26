@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import cv2
 import numpy as np
@@ -74,7 +74,7 @@ class VideoWriter:
         fourcc = cv2.VideoWriter_fourcc(*codec)
         self._writer = cv2.VideoWriter(self.path, fourcc, fps, frame_size)
         if not self._writer.isOpened():
-            raise IOError(f"Cannot create video writer: {self.path}")
+            raise OSError(f"Cannot create video writer: {self.path}")
 
     def write_frame(self, frame: np.ndarray) -> None:
         self._writer.write(frame)

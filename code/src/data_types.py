@@ -6,9 +6,7 @@ to avoid circular imports and provide a single source of truth.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -97,8 +95,8 @@ class TextTrack:
     target_lang: str
     detections: dict[int, TextDetection]  # frame_idx -> detection
     reference_frame_idx: int = -1
-    reference_quad: Optional[Quad] = None
-    edited_roi: Optional[np.ndarray] = None  # Result from Stage A (H x W x 3)
+    reference_quad: Quad | None = None
+    edited_roi: np.ndarray | None = None  # Result from Stage A (H x W x 3)
 
 
 @dataclass
@@ -106,8 +104,8 @@ class FrameHomography:
     """Homography data for one frame relative to the reference frame."""
 
     frame_idx: int
-    H_to_ref: Optional[np.ndarray] = None  # 3x3: frame -> reference
-    H_from_ref: Optional[np.ndarray] = None  # 3x3: reference -> frame
+    H_to_ref: np.ndarray | None = None  # 3x3: frame -> reference
+    H_from_ref: np.ndarray | None = None  # 3x3: reference -> frame
     is_valid: bool = True
 
 

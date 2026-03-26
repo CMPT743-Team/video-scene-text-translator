@@ -1,12 +1,10 @@
 """Tests for config loading and validation."""
 
 import tempfile
-from pathlib import Path
 
-import pytest
 import yaml
 
-from src.config import PipelineConfig, DetectionConfig
+from src.config import PipelineConfig
 
 
 class TestPipelineConfig:

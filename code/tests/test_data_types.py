@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.data_types import BBox, Quad, TextDetection, TextTrack
+from src.data_types import BBox, Quad, TextTrack
 
 
 class TestBBox:

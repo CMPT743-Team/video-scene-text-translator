@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 
-from src.config import PipelineConfig
 from src.data_types import Quad, TextDetection, TextTrack
 from src.stages.s4_propagation import PropagationStage
 

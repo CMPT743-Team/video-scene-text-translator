@@ -7,14 +7,12 @@ groups detections into tracks, and selects reference frames.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
-import cv2
 import numpy as np
 
 from src.config import PipelineConfig
 from src.data_types import BBox, Quad, TextDetection, TextTrack
-from src.utils.geometry import quad_bbox_area_ratio, quad_frontality_score
+from src.utils.geometry import quad_bbox_area_ratio
 from src.utils.image_processing import (
     compute_contrast_otsu,
     compute_sharpness,

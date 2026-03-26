@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
-import cv2
 
-from src.data_types import BBox, Quad, TextDetection, TextTrack
 from src.config import PipelineConfig
+from src.data_types import Quad, TextDetection, TextTrack
 
 
 @pytest.fixture

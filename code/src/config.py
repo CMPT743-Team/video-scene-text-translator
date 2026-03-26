@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -37,7 +36,7 @@ class TranslationConfig:
     source_lang: str = "en"
     target_lang: str = "es"
     backend: str = "googletrans"  # "googletrans" or "google-cloud"
-    api_key: Optional[str] = None
+    api_key: str | None = None
 
 
 @dataclass
@@ -76,7 +75,7 @@ class RevertConfig:
 @dataclass
 class TextEditorConfig:
     backend: str = "placeholder"  # "placeholder" or "stage_a"
-    model_path: Optional[str] = None
+    model_path: str | None = None
     device: str = "cpu"
 
 
@@ -92,12 +91,12 @@ class PipelineConfig:
     input_video: str = ""
     output_video: str = ""
     log_level: str = "INFO"
-    debug_output_dir: Optional[str] = None
+    debug_output_dir: str | None = None
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> PipelineConfig:
         """Load config from YAML file, merging with defaults."""
-        with open(path, "r") as f:
+        with open(path) as f:
             raw = yaml.safe_load(f) or {}
         return cls(
             detection=DetectionConfig(**raw.get("detection", {})),

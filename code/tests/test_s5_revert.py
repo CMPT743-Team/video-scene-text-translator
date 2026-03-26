@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 
-from src.config import PipelineConfig
 from src.data_types import FrameHomography, PropagatedROI, Quad
 from src.stages.s5_revert import RevertStage
 

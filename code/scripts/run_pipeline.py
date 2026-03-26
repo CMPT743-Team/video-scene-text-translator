@@ -12,8 +12,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import PipelineConfig
-from src.pipeline import VideoPipeline
+from src.config import PipelineConfig  # noqa: E402
+from src.pipeline import VideoPipeline  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

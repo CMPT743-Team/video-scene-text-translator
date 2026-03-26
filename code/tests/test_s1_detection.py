@@ -7,7 +7,6 @@ OCR and translation are mocked to avoid external dependencies.
 import numpy as np
 import pytest
 
-from src.config import PipelineConfig
 from src.data_types import BBox, Quad, TextDetection, TextTrack
 from src.stages.s1_detection import DetectionStage, _bbox_iou
 

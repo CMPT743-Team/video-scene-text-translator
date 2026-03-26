@@ -6,7 +6,7 @@ end-to-end pipeline execution without external dependencies.
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import cv2
 import numpy as np
@@ -14,7 +14,6 @@ import pytest
 
 from src.config import PipelineConfig
 from src.pipeline import VideoPipeline
-from src.video_io import VideoReader
 
 
 def _create_synthetic_video(path: str, num_frames: int = 5):

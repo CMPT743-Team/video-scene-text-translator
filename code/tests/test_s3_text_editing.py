@@ -5,8 +5,8 @@ import pytest
 
 from src.config import PipelineConfig
 from src.data_types import Quad, TextDetection, TextTrack
-from src.stages.s3_text_editing import TextEditingStage
 from src.models.placeholder_editor import PlaceholderTextEditor
+from src.stages.s3_text_editing import TextEditingStage
 
 
 class TestPlaceholderEditor:
