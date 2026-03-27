@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.data_types import BBox, Quad, TextTrack
+from src.data_types import BBox, Quad, TextDetection, TextTrack
 
 
 class TestBBox:
@@ -64,6 +64,27 @@ class TestQuad:
         assert ar == pytest.approx(1.0, abs=0.01)
 
 
+class TestTextDetectionHomography:
+    def test_homography_defaults_to_none(self, sample_detection):
+        assert sample_detection.H_to_frontal is None
+        assert sample_detection.H_from_frontal is None
+        assert sample_detection.homography_valid is False
+
+    def test_homography_fields_set(self, rect_quad):
+        det = TextDetection(
+            frame_idx=0,
+            quad=rect_quad,
+            bbox=rect_quad.to_bbox(),
+            text="TEST",
+            ocr_confidence=0.9,
+            H_to_frontal=np.eye(3, dtype=np.float64),
+            H_from_frontal=np.eye(3, dtype=np.float64),
+            homography_valid=True,
+        )
+        np.testing.assert_array_equal(det.H_to_frontal, np.eye(3))
+        assert det.homography_valid is True
+
+
 class TestTextTrack:
     def test_detections_dict_access(self, sample_detection):
         track = TextTrack(
@@ -77,3 +98,64 @@ class TestTextTrack:
         assert 0 in track.detections
         assert 5 in track.detections
         assert 3 not in track.detections
+
+    def test_canonical_size_default_none(self, sample_detection):
+        track = TextTrack(
+            track_id=0,
+            source_text="TEST",
+            target_text="PRUEBA",
+            source_lang="en",
+            target_lang="es",
+            detections={0: sample_detection},
+        )
+        assert track.canonical_size is None
+
+    def test_canonical_size_set(self, sample_detection):
+        track = TextTrack(
+            track_id=0,
+            source_text="TEST",
+            target_text="PRUEBA",
+            source_lang="en",
+            target_lang="es",
+            detections={0: sample_detection},
+            canonical_size=(240, 100),
+        )
+        assert track.canonical_size == (240, 100)
+
+    def test_reference_quad_returns_correct_quad(self, sample_detection):
+        track = TextTrack(
+            track_id=0,
+            source_text="TEST",
+            target_text="PRUEBA",
+            source_lang="en",
+            target_lang="es",
+            detections={0: sample_detection},
+            reference_frame_idx=0,
+        )
+        assert track.reference_quad is not None
+        np.testing.assert_array_equal(
+            track.reference_quad.points, sample_detection.quad.points
+        )
+
+    def test_reference_quad_none_when_no_detection(self):
+        track = TextTrack(
+            track_id=0,
+            source_text="TEST",
+            target_text="PRUEBA",
+            source_lang="en",
+            target_lang="es",
+            detections={},
+        )
+        assert track.reference_quad is None
+
+    def test_reference_quad_none_when_default_index(self, sample_detection):
+        track = TextTrack(
+            track_id=0,
+            source_text="TEST",
+            target_text="PRUEBA",
+            source_lang="en",
+            target_lang="es",
+            detections={0: sample_detection},
+            # reference_frame_idx defaults to -1, no detection at -1
+        )
+        assert track.reference_quad is None

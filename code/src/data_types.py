@@ -6,7 +6,7 @@ to avoid circular imports and provide a single source of truth.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -66,7 +66,11 @@ class Quad:
 
 @dataclass
 class TextDetection:
-    """A single text detection in one frame."""
+    """A single text detection in one frame.
+
+    Geometry fields (quad, bbox) are set by S1 detection/tracking.
+    Homography fields (H_to_frontal, H_from_frontal) are set by S2.
+    """
 
     frame_idx: int
     quad: Quad
@@ -77,6 +81,10 @@ class TextDetection:
     contrast_score: float = 0.0
     frontality_score: float = 0.0
     composite_score: float = 0.0
+    # Homography fields — populated by S2 frontalization
+    H_to_frontal: np.ndarray | None = None  # 3x3: frame → canonical frontal
+    H_from_frontal: np.ndarray | None = None  # 3x3: canonical frontal → frame
+    homography_valid: bool = False
 
 
 @dataclass
@@ -93,20 +101,16 @@ class TextTrack:
     target_text: str
     source_lang: str
     target_lang: str
-    detections: dict[int, TextDetection]  # frame_idx -> detection
+    detections: dict[int, TextDetection] = field(default_factory=dict)
     reference_frame_idx: int = -1
-    reference_quad: Quad | None = None
+    canonical_size: tuple[int, int] | None = None  # (width, height) of canonical frontal rect
     edited_roi: np.ndarray | None = None  # Result from Stage A (H x W x 3)
 
-
-@dataclass
-class FrameHomography:
-    """Homography data for one frame relative to the reference frame."""
-
-    frame_idx: int
-    H_to_ref: np.ndarray | None = None  # 3x3: frame -> reference
-    H_from_ref: np.ndarray | None = None  # 3x3: reference -> frame
-    is_valid: bool = True
+    @property
+    def reference_quad(self) -> Quad | None:
+        """Quad from the reference frame's detection."""
+        det = self.detections.get(self.reference_frame_idx)
+        return det.quad if det else None
 
 
 @dataclass
