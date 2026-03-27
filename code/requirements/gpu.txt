@@ -1,0 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+-r base.txt
+
+torch>=2.0.0
+easyocr>=1.7.0
