@@ -29,8 +29,11 @@ class DetectionConfig:
     ref_weight_frontality: float = 0.3  # bbox area ratio
     # Process every N-th frame for detection (1 = every frame)
     frame_sample_rate: int = 1
-    # Optical flow for gap-filling (tracking quads between sampled frames)
+    # Optical flow for tracking quads between frames
     optical_flow_method: str = "farneback"  # "farneback" or "lucas_kanade"
+    # "gaps_only": only fill frames missing OCR detections (original behavior)
+    # "full_propagation": propagate reference quad to ALL frames, overwriting OCR quads
+    flow_fill_strategy: str = "gaps_only"
     farneback_pyr_scale: float = 0.5
     farneback_levels: int = 3
     farneback_winsize: int = 15

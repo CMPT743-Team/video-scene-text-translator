@@ -107,11 +107,14 @@ class TextTracker:
     ) -> list[TextTrack]:
         """Fill missing frames in each track using optical flow propagation.
 
-        For each track, propagates quads bidirectionally from the reference
-        frame to cover all frames. Gap-filled frames get synthetic
-        TextDetection entries with ocr_confidence=0.0.
+        Behaviour depends on config.flow_fill_strategy:
+        - "gaps_only": only create synthetic detections for frames that have
+          no OCR detection (original behaviour).
+        - "full_propagation": propagate the reference quad to every frame,
+          overwriting all existing OCR quads with optical-flow-tracked quads.
         """
         all_frame_idxs = sorted(frames.keys())
+        full = self.config.flow_fill_strategy == "full_propagation"
 
         for track in tracks:
             if track.reference_frame_idx < 0 or not track.detections:
@@ -119,12 +122,14 @@ class TextTracker:
 
             ref_idx = track.reference_frame_idx
             tracked_quads = self._track_quad_across_frames(
-                track, frames, all_frame_idxs, ref_idx
+                track, frames, all_frame_idxs, ref_idx,
+                ref_only=full,
             )
 
-            # Create synthetic detections for gap-filled frames
             for frame_idx, quad in tracked_quads.items():
-                if frame_idx not in track.detections:
+                if frame_idx == ref_idx:
+                    continue  # never overwrite the reference frame itself
+                if full or frame_idx not in track.detections:
                     track.detections[frame_idx] = TextDetection(
                         frame_idx=frame_idx,
                         quad=quad,
@@ -141,12 +146,23 @@ class TextTracker:
         frames: dict[int, np.ndarray],
         all_frame_idxs: list[int],
         ref_idx: int,
+        ref_only: bool = False,
     ) -> dict[int, Quad]:
-        """Track the reference quad to all frames using optical flow."""
-        # Start with known detections
+        """Track the reference quad to all frames using optical flow.
+
+        Args:
+            ref_only: If True, seed propagation from only the reference quad
+                (ignoring other detected quads). This produces a smooth,
+                purely flow-based trajectory from a single anchor.
+        """
         tracked_quads: dict[int, Quad] = {}
-        for idx, det in track.detections.items():
-            tracked_quads[idx] = det.quad
+        if ref_only:
+            ref_det = track.detections.get(ref_idx)
+            if ref_det is not None:
+                tracked_quads[ref_idx] = ref_det.quad
+        else:
+            for idx, det in track.detections.items():
+                tracked_quads[idx] = det.quad
 
         # Forward pass: ref_idx -> end
         forward_idxs = [i for i in all_frame_idxs if i >= ref_idx]

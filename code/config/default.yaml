@@ -22,8 +22,11 @@ detection:
   ref_weight_contrast: 0.7    # Otsu interclass variance
   ref_weight_frontality: 0.3  # bbox area ratio
   frame_sample_rate: 1
-  # Optical flow for gap-filling (tracking quads between sampled frames)
+  # Optical flow for tracking quads between frames
   optical_flow_method: "farneback"
+  # "gaps_only": only fill frames missing OCR detections
+  # "full_propagation": propagate reference quad to ALL frames, overwriting OCR quads
+  flow_fill_strategy: "full_propagation"
   farneback_pyr_scale: 0.5
   farneback_levels: 3
   farneback_winsize: 15
