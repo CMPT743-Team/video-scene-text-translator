@@ -35,7 +35,7 @@ class DetectionConfig:
     # "full_propagation": propagate reference quad to ALL frames, overwriting OCR quads
     flow_fill_strategy: str = "gaps_only"
     # CoTracker3 settings (only used when optical_flow_method == "cotracker")
-    cotracker_checkpoint: str = "/workspace/co-tracker/checkpoints/scaled_offline.pth"
+    cotracker_checkpoint: str = "third_party/co-tracker/checkpoints/scaled_offline.pth"
     cotracker_window_len: int = 60
     farneback_pyr_scale: float = 0.5
     farneback_levels: int = 3

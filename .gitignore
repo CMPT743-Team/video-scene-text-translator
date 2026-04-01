@@ -38,3 +38,6 @@ _refs/
 .claude/settings.local.json
 .claude/plans/
 test_data/*.mp4
+
+# installed third-party code
+third_party/co-tracker/
