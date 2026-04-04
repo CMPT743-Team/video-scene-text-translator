@@ -168,6 +168,11 @@ class TextTracker:
                 (ignoring other detected quads). This produces a smooth,
                 purely flow-based trajectory from a single anchor.
         """
+
+        # only propagate inside track's frame range to avoid spurious detections far outside the track's temporal extent
+        track_frame_idx_start = min(track.detections.keys())
+        track_frame_idx_end = max(track.detections.keys())
+
         # CoTracker: batch-track all points from the reference frame at once
         if self.config.optical_flow_method == "cotracker":
             ref_det = track.detections.get(ref_idx)
@@ -175,8 +180,9 @@ class TextTracker:
                 return {}
             if self._cotracker is None:
                 self._cotracker = CoTrackerFlowTracker(self.config)
+            target_frame_idxs = [i for i in all_frame_idxs if track_frame_idx_start <= i <= track_frame_idx_end]
             tracked_points = self._cotracker.track_points_batch(
-                frames, all_frame_idxs, ref_idx, ref_det.quad.points,
+                frames, target_frame_idxs, ref_idx, ref_det.quad.points,
             )
             return {
                 idx: Quad(points=pts) for idx, pts in tracked_points.items()
@@ -191,13 +197,13 @@ class TextTracker:
         else:
             for idx, det in track.detections.items():
                 tracked_quads[idx] = det.quad
-
+        
         # Forward pass: ref_idx -> end
-        forward_idxs = [i for i in all_frame_idxs if i >= ref_idx]
+        forward_idxs = [i for i in all_frame_idxs if i >= ref_idx and track_frame_idx_start <= i <= track_frame_idx_end]
         self._propagate_quads(forward_idxs, frames, tracked_quads)
 
         # Backward pass: ref_idx -> start
-        backward_idxs = [i for i in reversed(all_frame_idxs) if i <= ref_idx]
+        backward_idxs = [i for i in reversed(all_frame_idxs) if i <= ref_idx and track_frame_idx_start <= i <= track_frame_idx_end]
         self._propagate_quads(backward_idxs, frames, tracked_quads)
 
         return tracked_quads
