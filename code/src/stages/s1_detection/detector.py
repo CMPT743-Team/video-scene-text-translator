@@ -54,7 +54,12 @@ class TextDetector:
                 continue
             if text.isdigit():
                 continue
-            if not self._is_plausible_text(text, zipf_frequency):
+            if self.config.word_whitelist is not None:
+                words = text.lower().split()
+                if not all(w in self.config.word_whitelist for w in words):
+                    logger.debug("Filtered non-whitelisted text: %r", text)
+                    continue
+            elif not self._is_plausible_text(text, zipf_frequency):
                 logger.debug("Filtered gibberish text: %r", text)
                 continue
             filtered.append(det)

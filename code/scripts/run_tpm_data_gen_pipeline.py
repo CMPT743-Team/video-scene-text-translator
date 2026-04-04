@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import sys
 from pathlib import Path
@@ -29,6 +30,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-lang", type=str, default=None,
         help="Source language code (e.g., en)",
+    )
+    parser.add_argument(
+        "--word-whitelist", type=str, default=None,
+        help="Path to CSV file with whitelisted words (first column)",
     )
     parser.add_argument(
         "--log-level", type=str, default=None,
@@ -57,6 +62,10 @@ def main():
     if args.source_lang:
         config.translation.source_lang = args.source_lang
     config.translation.target_lang = None  # We only want to extract ROIs, so translation is not needed
+    if args.word_whitelist:
+        with open(args.word_whitelist, newline="") as f:
+            reader = csv.reader(f)
+            config.detection.word_whitelist = {row[0].strip().lower() for row in reader if row}
     if args.log_level:
         config.log_level = args.log_level
     if args.debug_dir:

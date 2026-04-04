@@ -46,6 +46,8 @@ class DetectionConfig:
     farneback_poly_sigma: float = 1.2
     lk_win_size: list[int] = field(default_factory=lambda: [21, 21])
     lk_max_level: int = 3
+    # Optional word whitelist — if set, only keep detections whose words are all in this set
+    word_whitelist: set[str] | None = None
 
 
 @dataclass
