@@ -223,6 +223,13 @@ class TestFillGaps:
                     text="HELLO",
                     ocr_confidence=0.9,
                 ),
+                2: TextDetection(
+                    frame_idx=2,
+                    quad=rect_quad,
+                    bbox=rect_quad.to_bbox(),
+                    text="HELLO",
+                    ocr_confidence=0.9,
+                ),
             },
             reference_frame_idx=0,
         )
@@ -236,7 +243,7 @@ class TestFillGaps:
         assert 0 in result[0].detections
         assert 1 in result[0].detections
         assert 2 in result[0].detections
-        # Gap-filled frames should have ocr_confidence=0.0
+        # Gap-filled frame 1 should have ocr_confidence=0.0
         assert result[0].detections[1].ocr_confidence == 0.0
 
     def test_no_gaps_unchanged(self, default_config, rect_quad):
