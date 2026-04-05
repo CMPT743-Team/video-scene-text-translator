@@ -62,11 +62,14 @@ class ReferenceSelector:
             return text
 
     def select_reference_frames(
-        self, tracks: list[TextTrack]
+        self,
+        tracks: list[TextTrack],
+        max_frame_offset: int | None = None,
     ) -> list[TextTrack]:
         """Select reference frame per track using STRIVE-aligned criteria.
 
         Pipeline (hard pre-filters, then 2-metric composite):
+        0. Filter: Detections must have the longest text in the track
         1. Filter: OCR confidence >= ref_ocr_min_confidence
         2. Filter: Keep top-K by sharpness (ref_sharpness_top_k)
         3. Score: 0.7 * contrast (Otsu) + 0.3 * frontality (bbox area ratio)
@@ -74,12 +77,37 @@ class ReferenceSelector:
 
         If all candidates are filtered out, falls back to highest
         composite_score among all detections.
+
+        Args:
+            tracks: list of TextTrack to process.
+            max_frame_offset: if set, only consider detections within the
+                first ``max_frame_offset`` frames of each track. Useful for
+                CoTracker online mode where the reference must fall inside the
+                first sliding window.
         """
         for track in tracks:
             if not track.detections:
                 continue
 
             candidates = list(track.detections.items())
+
+            # Optional: restrict to first N frames of the track
+            if max_frame_offset is not None and candidates:
+                track_start = min(idx for idx, _ in candidates)
+                candidates = [
+                    (idx, det) for idx, det in candidates
+                    if idx < track_start + max_frame_offset
+                ]
+                if not candidates:
+                    # Fallback: use all detections if none in the window
+                    candidates = list(track.detections.items())
+
+            # Hard filter 0: keep only detections with the longest text in the track
+            max_len = max(len(det.text) for _, det in candidates)
+            candidates = [
+                (idx, det) for idx, det in candidates
+                if len(det.text) == max_len
+            ]
 
             # Hard filter 1: OCR confidence
             ocr_min = self.config.ref_ocr_min_confidence

@@ -17,6 +17,7 @@ class VideoReader:
         self._cap = cv2.VideoCapture(self.path)
         if not self._cap.isOpened():
             raise FileNotFoundError(f"Cannot open video: {self.path}")
+        self._next_idx: int = 0  # tracks the next frame index the decoder will return
 
     @property
     def fps(self) -> float:
@@ -34,19 +35,30 @@ class VideoReader:
         return (w, h)
 
     def read_frame(self, idx: int) -> np.ndarray | None:
-        """Read a specific frame by index. Returns None if read fails."""
-        self._cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        """Read a specific frame by index. Returns None if read fails.
+
+        Skips the seek when the decoder is already at the requested position,
+        which is significantly faster for sequential reads.
+        """
+        if idx != self._next_idx:
+            self._cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            self._next_idx = idx
         ret, frame = self._cap.read()
-        return frame if ret else None
+        if ret:
+            self._next_idx = idx + 1
+            return frame
+        return None
 
     def iter_frames(self) -> Iterator[tuple[int, np.ndarray]]:
         """Yield (frame_idx, frame_bgr) for all frames."""
         self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        self._next_idx = 0
         idx = 0
         while True:
             ret, frame = self._cap.read()
             if not ret:
                 break
+            self._next_idx = idx + 1
             yield idx, frame
             idx += 1
 

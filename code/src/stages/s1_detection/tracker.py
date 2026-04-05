@@ -69,6 +69,13 @@ class TextTracker:
                 for track_id, last_det in active.items():
                     if track_id in matched_track_ids:
                         continue
+                    if abs(last_det.frame_idx - frame_idx) > self.config.track_break_threshold:
+                        continue  # Only consider tracks from the previous sampled frame
+                    # only consider possble to be in one track if text similarity is above a threshold
+                    # (e.g. 0.6) to avoid matching different text instances that happen to be close together
+                    text_similarity = self._compute_text_similarity(det.text, last_det.text)
+                    if text_similarity < 0.6:
+                        continue
                     iou = bbox_iou(det.bbox, last_det.bbox)
                     if iou > best_iou:
                         best_iou = iou
@@ -87,7 +94,17 @@ class TextTracker:
             for det_i, det in enumerate(dets):
                 if det_i in matched_det_idxs:
                     continue
-                translated = translate_fn(det.text)
+                if target_lang:
+                    try:
+                        translated = translate_fn(det.text)
+                    except Exception:
+                        logger.warning(
+                            "Translation failed for text '%s', using source text as target",
+                            det.text,
+                        )
+                        translated = det.text
+                else:
+                    translated = det.text
                 track = TextTrack(
                     track_id=next_track_id,
                     source_text=det.text,
@@ -96,6 +113,7 @@ class TextTracker:
                     target_lang=target_lang,
                     detections={frame_idx: det},
                 )
+                logger.info(f"Created track {track.track_id} for text '{track.source_text}' at frame {frame_idx}")
                 tracks.append(track)
                 active[next_track_id] = det
                 next_track_id += 1
@@ -141,6 +159,16 @@ class TextTracker:
                     )
 
         return tracks
+    
+    def _compute_text_similarity(self, text1: str, text2: str) -> float:
+        """Compute a simple text similarity score between two strings."""
+        set1 = set(text1.lower().split())
+        set2 = set(text2.lower().split())
+        if not set1 or not set2:
+            return 0.0
+        intersection = len(set1.intersection(set2))
+        union = len(set1.union(set2))
+        return intersection / union
 
     def _track_quad_across_frames(
         self,
@@ -157,6 +185,11 @@ class TextTracker:
                 (ignoring other detected quads). This produces a smooth,
                 purely flow-based trajectory from a single anchor.
         """
+
+        # only propagate inside track's frame range to avoid spurious detections far outside the track's temporal extent
+        track_frame_idx_start = min(track.detections.keys())
+        track_frame_idx_end = max(track.detections.keys())
+
         # CoTracker: batch-track all points from the reference frame at once
         if self.config.optical_flow_method == "cotracker":
             ref_det = track.detections.get(ref_idx)
@@ -164,8 +197,9 @@ class TextTracker:
                 return {}
             if self._cotracker is None:
                 self._cotracker = CoTrackerFlowTracker(self.config)
+            target_frame_idxs = [i for i in all_frame_idxs if track_frame_idx_start <= i <= track_frame_idx_end]
             tracked_points = self._cotracker.track_points_batch(
-                frames, all_frame_idxs, ref_idx, ref_det.quad.points,
+                frames, target_frame_idxs, ref_idx, ref_det.quad.points,
             )
             return {
                 idx: Quad(points=pts) for idx, pts in tracked_points.items()
@@ -180,13 +214,13 @@ class TextTracker:
         else:
             for idx, det in track.detections.items():
                 tracked_quads[idx] = det.quad
-
+        
         # Forward pass: ref_idx -> end
-        forward_idxs = [i for i in all_frame_idxs if i >= ref_idx]
+        forward_idxs = [i for i in all_frame_idxs if i >= ref_idx and track_frame_idx_start <= i <= track_frame_idx_end]
         self._propagate_quads(forward_idxs, frames, tracked_quads)
 
         # Backward pass: ref_idx -> start
-        backward_idxs = [i for i in reversed(all_frame_idxs) if i <= ref_idx]
+        backward_idxs = [i for i in reversed(all_frame_idxs) if i <= ref_idx and track_frame_idx_start <= i <= track_frame_idx_end]
         self._propagate_quads(backward_idxs, frames, tracked_quads)
 
         return tracked_quads
