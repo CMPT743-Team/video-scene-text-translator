@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
         help="Path to YAML config file (default: config/default.yaml)",
     )
     parser.add_argument("--input", type=str, help="Input video path")
-    parser.add_argument("--output_dir", type=str, help="Output directory for extracted ROIs")
+    parser.add_argument("--output-dir", type=str, help="Output directory for extracted ROIs")
     parser.add_argument(
         "--source-lang", type=str, default=None,
         help="Source language code (e.g., en)",
