@@ -1,0 +1,357 @@
+"""AnyText2 text editor backend via Gradio HTTP API.
+
+Calls an external AnyText2 Gradio server to perform style-preserving
+cross-language scene text editing.  The server runs in a separate conda
+env (Python 3.10) to avoid dependency conflicts.
+
+Requires:
+    pip install gradio_client
+    A running AnyText2 Gradio server (see third_party/install_anytext2.sh)
+"""
+
+from __future__ import annotations
+
+import logging
+import tempfile
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from src.config import TextEditorConfig
+from src.models.base_text_editor import BaseTextEditor
+
+logger = logging.getLogger(__name__)
+
+# Clamp ROI dimensions to AnyText2's accepted range.
+_MIN_DIM = 256
+_MAX_DIM = 1024
+# If clamping would distort aspect ratio beyond this factor, warn and allow it.
+_MAX_ASPECT_DISTORTION = 2.0
+
+
+class AnyText2Editor(BaseTextEditor):
+    """Scene text editor that delegates to an AnyText2 Gradio server.
+
+    Usage::
+
+        editor = AnyText2Editor(config)
+        edited = editor.edit_text(roi_image, "PELIGRO")
+    """
+
+    def __init__(self, config: TextEditorConfig):
+        self.config = config
+        self._client = None  # Lazy-init gradio Client
+
+    # ------------------------------------------------------------------
+    # Lazy initialisation
+    # ------------------------------------------------------------------
+
+    def _get_client(self):
+        """Connect to the Gradio server on first use."""
+        if self._client is not None:
+            return self._client
+
+        if not self.config.server_url:
+            raise ValueError(
+                "AnyText2 backend requires text_editor.server_url in config. "
+                "Set it to the Gradio server URL, e.g. 'http://host:port/'."
+            )
+
+        from gradio_client import Client  # lazy import
+
+        url = self.config.server_url.rstrip("/") + "/"
+        timeout = self.config.server_timeout
+        logger.info(
+            "Connecting to AnyText2 server at %s (timeout=%ds)", url, timeout,
+        )
+        try:
+            self._client = Client(url, upload_files=True)
+        except Exception as exc:
+            raise ConnectionError(
+                f"Cannot connect to AnyText2 server at {url}. "
+                "Is the server running? See third_party/install_anytext2.sh."
+            ) from exc
+
+        logger.info("Connected to AnyText2 server")
+        return self._client
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def edit_text(self, roi_image: np.ndarray, target_text: str) -> np.ndarray:
+        """Replace text in *roi_image* with *target_text* via AnyText2.
+
+        Args:
+            roi_image: BGR image of the text region (H x W x 3, uint8).
+            target_text: The translated text to render.
+
+        Returns:
+            Edited BGR image, same shape as *roi_image*.
+        """
+        if roi_image.size == 0:
+            logger.warning("AnyText2Editor: empty ROI, returning as-is")
+            return roi_image
+
+        h_orig, w_orig = roi_image.shape[:2]
+        if h_orig < 5 or w_orig < 5:
+            logger.warning("AnyText2Editor: ROI too small (%dx%d), returning as-is", w_orig, h_orig)
+            return roi_image
+
+        # Resize if outside AnyText2's accepted range
+        roi_resized = self._clamp_dimensions(roi_image)
+        h_send, w_send = roi_resized.shape[:2]
+
+        # Extract dominant text color from the ROI
+        text_color = self._extract_text_color(roi_resized)
+
+        # Save images to temp files (Gradio API needs file paths)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ori_path = str(Path(tmpdir) / "ori.png")
+            mask_path = str(Path(tmpdir) / "mask.png")
+
+            if not cv2.imwrite(ori_path, roi_resized):
+                raise RuntimeError(f"Failed to write temp ROI image to {ori_path}")
+
+            # Full-image white mask: entire ROI is the edit region
+            mask = np.ones((h_send, w_send, 3), dtype=np.uint8) * 255
+            if not cv2.imwrite(mask_path, mask):
+                raise RuntimeError(f"Failed to write temp mask image to {mask_path}")
+
+            result_image = self._call_server(
+                ori_path, mask_path, target_text, text_color, w_send, h_send,
+            )
+
+        # Resize result back to original dimensions if we scaled
+        if result_image.shape[:2] != (h_orig, w_orig):
+            result_image = cv2.resize(
+                result_image, (w_orig, h_orig), interpolation=cv2.INTER_LANCZOS4,
+            )
+
+        return result_image
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _call_server(
+        self,
+        ori_path: str,
+        mask_path: str,
+        target_text: str,
+        text_color: str,
+        w: int,
+        h: int,
+    ) -> np.ndarray:
+        """Send an edit request to the AnyText2 Gradio server."""
+        from gradio_client import handle_file  # lazy import
+
+        client = self._get_client()
+
+        # Build ref_img: background is the original, layers contains the mask
+        ref_img = {
+            "background": handle_file(ori_path),
+            "layers": [handle_file(mask_path)],
+            "composite": None,
+        }
+        ori_img = handle_file(ori_path)
+
+        # Null placeholder for unused mimic-font image editors (m1-m5)
+        null_img = {"background": None, "layers": [], "composite": None}
+
+        logger.debug(
+            "AnyText2 request: text=%r, size=%dx%d, color=%s, steps=%d",
+            target_text, w, h, text_color, self.config.anytext2_ddim_steps,
+        )
+
+        timeout = self.config.server_timeout
+
+        result = client.predict(
+            img_prompt="Text with some background",
+            text_prompt=target_text,
+            sort_radio="↕",
+            revise_pos=False,
+            base_model_path="",
+            lora_path_ratio="",
+            f1="Mimic From Image(模仿图中字体)",
+            f2="No Font(不指定字体)",
+            f3="No Font(不指定字体)",
+            f4="No Font(不指定字体)",
+            f5="No Font(不指定字体)",
+            m1=null_img,
+            m2=null_img,
+            m3=null_img,
+            m4=null_img,
+            m5=null_img,
+            c1=text_color,
+            c2="#000000",
+            c3="#000000",
+            c4="#000000",
+            c5="#000000",
+            show_debug=False,
+            draw_img=null_img,
+            ref_img=ref_img,
+            ori_img=ori_img,
+            img_count=self.config.anytext2_img_count,
+            ddim_steps=self.config.anytext2_ddim_steps,
+            w=w,
+            h=h,
+            strength=self.config.anytext2_strength,
+            attnx_scale=1.0,
+            font_hollow=True,
+            cfg_scale=self.config.anytext2_cfg_scale,
+            seed=-1,
+            eta=0,
+            a_prompt=(
+                "best quality, extremely detailed, 4k, HD, "
+                "supper legible text, clear text edges, clear strokes, "
+                "neat writing, no watermarks"
+            ),
+            n_prompt=(
+                "low-res, bad anatomy, extra digit, fewer digits, cropped, "
+                "worst quality, low quality, watermark, unreadable text, "
+                "messy words, distorted text, disorganized writing, "
+                "advertising picture"
+            ),
+            api_name="/process_1",
+            result_timeout=timeout,
+        )
+
+        return self._parse_result(result)
+
+    def _parse_result(self, result: tuple) -> np.ndarray:
+        """Extract the first image from the Gradio gallery response.
+
+        Args:
+            result: ``(gallery_list, debug_markdown)`` from ``/process_1``.
+
+        Returns:
+            BGR numpy array of the edited image.
+        """
+        gallery, debug_info = result
+
+        if not gallery:
+            raise RuntimeError(
+                f"AnyText2 returned empty gallery. Debug: {debug_info}"
+            )
+
+        # Each gallery entry is a dict with 'image' -> dict with 'path'
+        first_entry = gallery[0]
+        if isinstance(first_entry, dict) and "image" in first_entry:
+            image_path = first_entry["image"]["path"]
+        elif isinstance(first_entry, dict) and "path" in first_entry:
+            image_path = first_entry["path"]
+        else:
+            raise RuntimeError(
+                f"Unexpected gallery format: {type(first_entry)}. "
+                f"Debug: {debug_info}"
+            )
+
+        img = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        if img is None:
+            raise RuntimeError(
+                f"Failed to read AnyText2 result image at {image_path}"
+            )
+
+        logger.debug("AnyText2 result: shape=%s", img.shape)
+        return img
+
+    @staticmethod
+    def _clamp_dimensions(image: np.ndarray) -> np.ndarray:
+        """Resize image so both dimensions are within [256, 1024].
+
+        Uses uniform scaling to preserve aspect ratio.  When the aspect
+        ratio is too extreme for both axes to fit within [256, 1024]
+        simultaneously, the shorter axis is padded to 256 with the
+        border color rather than stretched (which would distort glyphs).
+
+        Returns:
+            Resized (and possibly padded) image.
+        """
+        h, w = image.shape[:2]
+
+        # Uniform scale: bring the larger dimension into bounds first
+        scale = 1.0
+        if max(h, w) > _MAX_DIM:
+            scale = _MAX_DIM / max(h, w)
+
+        new_w = int(round(w * scale))
+        new_h = int(round(h * scale))
+
+        # If the shorter side is still below _MIN_DIM after uniform scale,
+        # pad instead of stretching to preserve aspect ratio.
+        pad_w = max(0, _MIN_DIM - new_w)
+        pad_h = max(0, _MIN_DIM - new_h)
+
+        if new_w == w and new_h == h and pad_w == 0 and pad_h == 0:
+            return image
+
+        # Resize uniformly
+        if new_w != w or new_h != h:
+            image = cv2.resize(
+                image, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4,
+            )
+
+        # Pad short axis with border color (replicate edge pixels)
+        if pad_w > 0 or pad_h > 0:
+            pad_left = pad_w // 2
+            pad_right = pad_w - pad_left
+            pad_top = pad_h // 2
+            pad_bottom = pad_h - pad_top
+            image = cv2.copyMakeBorder(
+                image, pad_top, pad_bottom, pad_left, pad_right,
+                cv2.BORDER_REPLICATE,
+            )
+            logger.debug(
+                "Padded ROI by (%d,%d,%d,%d) to reach minimum dimensions",
+                pad_top, pad_bottom, pad_left, pad_right,
+            )
+
+        logger.debug(
+            "Clamped ROI from %dx%d to %dx%d", w, h,
+            image.shape[1], image.shape[0],
+        )
+        return image
+
+    @staticmethod
+    def _extract_text_color(image: np.ndarray) -> str:
+        """Estimate dominant text color from the ROI as a hex string.
+
+        Strategy: text is typically darker or lighter than the background.
+        Sample border pixels (background) and interior pixels, then pick
+        the cluster that differs most from the border median.
+        """
+        h, w = image.shape[:2]
+        border_h = max(1, h // 8)
+        border_w = max(1, w // 8)
+
+        # Border pixels → background estimate
+        border_pixels = np.concatenate([
+            image[:border_h].reshape(-1, 3),
+            image[-border_h:].reshape(-1, 3),
+            image[border_h:-border_h, :border_w].reshape(-1, 3),
+            image[border_h:-border_h, -border_w:].reshape(-1, 3),
+        ])
+        bg_median = np.median(border_pixels, axis=0)
+
+        # Interior pixels
+        interior = image[border_h:h - border_h, border_w:w - border_w]
+        if interior.size == 0:
+            return "#000000"
+
+        interior_flat = interior.reshape(-1, 3).astype(np.float64)
+
+        # Pixels that differ most from background are likely text
+        diffs = np.linalg.norm(interior_flat - bg_median, axis=1)
+        threshold = np.percentile(diffs, 75)
+        text_mask = diffs >= threshold
+        text_pixels = interior_flat[text_mask]
+
+        if len(text_pixels) == 0:
+            return "#000000"
+
+        # Median of text pixels (BGR)
+        text_color_bgr = np.median(text_pixels, axis=0).astype(int)
+        b, g, r = text_color_bgr
+        return f"#{r:02x}{g:02x}{b:02x}"
