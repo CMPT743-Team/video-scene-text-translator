@@ -6,6 +6,9 @@ PyYAML>=6.0
 Pillow>=10.0.0
 wordfreq
 
+# Optional: AnyText2 backend (only needed when text_editor.backend == "anytext2")
+# gradio_client>=1.5.0
+
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
