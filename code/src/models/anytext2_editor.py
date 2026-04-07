@@ -66,7 +66,7 @@ class AnyText2Editor(BaseTextEditor):
             "Connecting to AnyText2 server at %s (timeout=%ds)", url, timeout,
         )
         try:
-            self._client = Client(url, upload_files=True)
+            self._client = Client(url)
         except Exception as exc:
             raise ConnectionError(
                 f"Cannot connect to AnyText2 server at {url}. "
@@ -114,8 +114,10 @@ class AnyText2Editor(BaseTextEditor):
             if not cv2.imwrite(ori_path, roi_resized):
                 raise RuntimeError(f"Failed to write temp ROI image to {ori_path}")
 
-            # Full-image white mask: entire ROI is the edit region
-            mask = np.ones((h_send, w_send, 3), dtype=np.uint8) * 255
+            # RGBA mask: alpha channel marks the edit region.
+            # AnyText2 extracts the mask from layers[0][..., 3:] (alpha).
+            mask = np.zeros((h_send, w_send, 4), dtype=np.uint8)
+            mask[..., 3] = 255  # alpha=255 → entire ROI is the edit region
             if not cv2.imwrite(mask_path, mask):
                 raise RuntimeError(f"Failed to write temp mask image to {mask_path}")
 
@@ -149,16 +151,30 @@ class AnyText2Editor(BaseTextEditor):
 
         client = self._get_client()
 
-        # Build ref_img: background is the original, layers contains the mask
+        # ref_img: background is the original, layers[0] is an RGBA image
+        # where the alpha channel marks the edit region.
         ref_img = {
             "background": handle_file(ori_path),
             "layers": [handle_file(mask_path)],
             "composite": None,
+            "id": None,
         }
         ori_img = handle_file(ori_path)
 
-        # Null placeholder for unused mimic-font image editors (m1-m5)
-        null_img = {"background": None, "layers": [], "composite": None}
+        # m1: ROI image for "Mimic From Image" font extraction.
+        # Background is the source image; layer alpha marks font region.
+        mimic_img = {
+            "background": handle_file(ori_path),
+            "layers": [handle_file(mask_path)],
+            "composite": None,
+            "id": None,
+        }
+        # Null placeholder for unused font image editors (m2-m5)
+        null_img = {"background": None, "layers": [], "composite": None, "id": None}
+
+        # AnyText2 text_prompt: text must be wrapped in literal double quotes
+        # so that modify_prompt() regex can find it.
+        quoted_text = f'"{target_text}"'
 
         logger.debug(
             "AnyText2 request: text=%r, size=%dx%d, color=%s, steps=%d",
@@ -167,9 +183,9 @@ class AnyText2Editor(BaseTextEditor):
 
         timeout = self.config.server_timeout
 
-        result = client.predict(
+        job = client.submit(
             img_prompt="Text with some background",
-            text_prompt=target_text,
+            text_prompt=quoted_text,
             sort_radio="↕",
             revise_pos=False,
             base_model_path="",
@@ -179,7 +195,7 @@ class AnyText2Editor(BaseTextEditor):
             f3="No Font(不指定字体)",
             f4="No Font(不指定字体)",
             f5="No Font(不指定字体)",
-            m1=null_img,
+            m1=mimic_img,
             m2=null_img,
             m3=null_img,
             m4=null_img,
@@ -215,8 +231,8 @@ class AnyText2Editor(BaseTextEditor):
                 "advertising picture"
             ),
             api_name="/process_1",
-            result_timeout=timeout,
         )
+        result = job.result(timeout=timeout)
 
         return self._parse_result(result)
 
@@ -236,10 +252,14 @@ class AnyText2Editor(BaseTextEditor):
                 f"AnyText2 returned empty gallery. Debug: {debug_info}"
             )
 
-        # Each gallery entry is a dict with 'image' -> dict with 'path'
+        # Gallery entry format varies by gradio_client version:
+        #   - {"image": "/path/to/file.webp", "caption": ...}
+        #   - {"image": {"path": "/path/..."}, "caption": ...}
+        #   - {"path": "/path/..."}
         first_entry = gallery[0]
         if isinstance(first_entry, dict) and "image" in first_entry:
-            image_path = first_entry["image"]["path"]
+            img_val = first_entry["image"]
+            image_path = img_val["path"] if isinstance(img_val, dict) else img_val
         elif isinstance(first_entry, dict) and "path" in first_entry:
             image_path = first_entry["path"]
         else:

@@ -127,7 +127,7 @@ class TestGradioCall:
     @patch("src.models.anytext2_editor.AnyText2Editor._get_client")
     @patch.dict("sys.modules", {"gradio_client": MagicMock(handle_file=_make_mock_handle_file())})
     def test_edit_text_calls_predict(self, mock_get_client, editor: AnyText2Editor):
-        """edit_text should call the Gradio predict endpoint."""
+        """edit_text should call the Gradio submit endpoint."""
         import tempfile
         from pathlib import Path
 
@@ -139,20 +139,22 @@ class TestGradioCall:
             cv2.imwrite(fake_result_path, fake_img)
 
             mock_client = MagicMock()
-            mock_client.predict.return_value = (
-                [{"image": {"path": fake_result_path}}],
+            mock_job = MagicMock()
+            mock_job.result.return_value = (
+                [{"image": fake_result_path}],
                 "debug info",
             )
+            mock_client.submit.return_value = mock_job
             mock_get_client.return_value = mock_client
 
             roi = np.full((300, 500, 3), 200, dtype=np.uint8)
             result = editor.edit_text(roi, "HOLA")
 
-            # Verify predict was called with /process_1
-            mock_client.predict.assert_called_once()
-            call_kwargs = mock_client.predict.call_args
+            # Verify submit was called with /process_1
+            mock_client.submit.assert_called_once()
+            call_kwargs = mock_client.submit.call_args
             assert call_kwargs.kwargs.get("api_name") == "/process_1"
-            assert call_kwargs.kwargs.get("text_prompt") == "HOLA"
+            assert call_kwargs.kwargs.get("text_prompt") == '"HOLA"'
 
             # Result should match original dimensions
             assert result.shape == (300, 500, 3)
@@ -162,7 +164,9 @@ class TestGradioCall:
     def test_empty_gallery_raises(self, mock_get_client, editor: AnyText2Editor):
         """Empty gallery response should raise RuntimeError."""
         mock_client = MagicMock()
-        mock_client.predict.return_value = ([], "error info")
+        mock_job = MagicMock()
+        mock_job.result.return_value = ([], "error info")
+        mock_client.submit.return_value = mock_job
         mock_get_client.return_value = mock_client
 
         roi = np.full((300, 500, 3), 200, dtype=np.uint8)
@@ -184,10 +188,12 @@ class TestGradioCall:
             cv2.imwrite(fake_result_path, fake_img)
 
             mock_client = MagicMock()
-            mock_client.predict.return_value = (
-                [{"image": {"path": fake_result_path}}],
+            mock_job = MagicMock()
+            mock_job.result.return_value = (
+                [{"image": fake_result_path}],
                 "",
             )
+            mock_client.submit.return_value = mock_job
             mock_get_client.return_value = mock_client
 
             roi = np.full((50, 100, 3), 200, dtype=np.uint8)
@@ -206,7 +212,7 @@ class TestParseResult:
         """Gallery pointing to non-existent file should raise RuntimeError."""
         with pytest.raises(RuntimeError, match="Failed to read"):
             editor._parse_result(
-                ([{"image": {"path": "/nonexistent/file.png"}}], "debug")
+                ([{"image": "/nonexistent/file.png"}], "debug")
             )
 
 
