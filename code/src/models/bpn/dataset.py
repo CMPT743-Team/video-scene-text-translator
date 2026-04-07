@@ -63,6 +63,8 @@ class BPNDataset(Dataset):
 
         # Discover tracks — initially stores paths
         self.samples: list[tuple[list, int]] = []
+        # Parallel list of track IDs (one per sample), preserved across cache conversion
+        self.sample_track_ids: list[str] = []
         self._build_samples(data_root, video_indices, max_tracks_per_video,
                             min_track_length, stride, seed)
 
@@ -114,8 +116,10 @@ class BPNDataset(Dataset):
 
                 # Generate samples: sliding window with stride
                 frame_paths = [str(f) for f in frames]
+                track_id = str(tdir)
                 for start in range(0, len(frames) - self.window + 1, stride):
                     self.samples.append((frame_paths, start))
+                    self.sample_track_ids.append(track_id)
 
     def _preload_cache(self):
         """Decode, resize, and pack all images into one contiguous numpy array.

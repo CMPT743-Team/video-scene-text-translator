@@ -80,6 +80,29 @@ def evaluate_metrics(
     return metrics
 
 
+def _select_samples_from_distinct_tracks(
+    dataset, max_samples: int, seed: int = 0,
+) -> list[int]:
+    """Pick dataset indices such that each comes from a different track.
+
+    Uses the dataset's `sample_track_ids` parallel list (populated at build
+    time) to group sample indices by track, shuffles tracks, then picks one
+    random sample from each.
+    """
+    import random as _random
+    rng = _random.Random(seed)
+
+    track_to_indices: dict[str, list[int]] = {}
+    for i, tid in enumerate(dataset.sample_track_ids):
+        track_to_indices.setdefault(tid, []).append(i)
+
+    track_ids = list(track_to_indices.keys())
+    rng.shuffle(track_ids)
+    track_ids = track_ids[:max_samples]
+
+    return [rng.choice(track_to_indices[t]) for t in track_ids]
+
+
 @torch.no_grad()
 def generate_visualizations(
     model: BPN,
@@ -91,6 +114,9 @@ def generate_visualizations(
 ):
     """Generate side-by-side comparison images.
 
+    Each sample is drawn from a different track so the visualizations cover
+    diverse content rather than 20 near-identical frames from 2 tracks.
+
     Layout per sample: ref | target_i | predicted_i | |target - predicted|
     Saves as PNG files using cv2 (headless).
     """
@@ -98,23 +124,22 @@ def generate_visualizations(
 
     model.eval()
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    dataset = loader.dataset
+    selected_indices = _select_samples_from_distinct_tracks(dataset, max_samples)
+    print(f"Selected {len(selected_indices)} samples from {len(selected_indices)} distinct tracks")
+
     sample_idx = 0
-
-    for batch in loader:
-        if sample_idx >= max_samples:
-            break
-
-        images = batch["images"].to(device)
-        ref = batch["ref_image"].to(device)
-        neighbors = batch["neighbor_images"].to(device)
+    for ds_idx in selected_indices:
+        item = dataset[ds_idx]
+        images = item["images"].unsqueeze(0).to(device)
+        ref = item["ref_image"].unsqueeze(0).to(device)
+        neighbors = item["neighbor_images"].unsqueeze(0).to(device)
 
         pred = model(images)
         B, N, C, H, W = neighbors.shape
 
         for b in range(B):
-            if sample_idx >= max_samples:
-                break
-
             ref_np = _tensor_to_bgr(ref[b])  # (H, W, 3)
             rows = []
 
