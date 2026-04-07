@@ -202,6 +202,7 @@ def train(config: dict):
         batch_size=dc.get("batch_size", 32),
         num_workers=dc.get("num_workers", 4),
         seed=seed,
+        cache_in_ram=dc.get("cache_in_ram", False),
     )
     print(f"Train samples: {len(train_loader.dataset)}, "
           f"Val samples: {len(val_loader.dataset)}")
@@ -234,11 +235,22 @@ def train(config: dict):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr,
                                   weight_decay=oc.get("weight_decay", 1e-5))
 
-    # LR scheduler
+    # LR scheduler: linear warmup + cosine annealing
     sc = config.get("scheduler", {})
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.get("epochs", 100),
+    epochs = config.get("epochs", 100)
+    warmup_epochs = sc.get("warmup_epochs", 2)
+
+    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=max(1, epochs - warmup_epochs),
         eta_min=sc.get("eta_min", 1e-6),
+    )
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=1.0 / max(1, warmup_epochs),
+        end_factor=1.0, total_iters=warmup_epochs,
+    )
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer, schedulers=[warmup_scheduler, cosine_scheduler],
+        milestones=[warmup_epochs],
     )
 
     # Resume from checkpoint
