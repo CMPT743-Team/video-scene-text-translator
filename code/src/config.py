@@ -85,9 +85,17 @@ class RevertConfig:
 
 @dataclass
 class TextEditorConfig:
-    backend: str = "placeholder"  # "placeholder" or "stage_a"
+    backend: str = "placeholder"  # "placeholder", "anytext2", or "stage_a"
     model_path: str | None = None
     device: str = "cpu"
+    # AnyText2 Gradio server settings (only used when backend == "anytext2")
+    server_url: str | None = None  # e.g. "http://localhost:45843/"
+    server_timeout: int = 120  # seconds to wait for Gradio response
+    anytext2_ddim_steps: int = 20
+    anytext2_cfg_scale: float = 7.5
+    anytext2_strength: float = 1.0
+    anytext2_img_count: int = 1  # number of result images (1 = fastest)
+
 
 @dataclass
 class TPMDataGenConfig:
@@ -165,4 +173,8 @@ class PipelineConfig:
             errors.append("ref_sharpness_top_k must be >= 1")
         if self.detection.frame_sample_rate < 1:
             errors.append("frame_sample_rate must be >= 1")
+        if self.text_editor.backend == "anytext2" and not self.text_editor.server_url:
+            errors.append(
+                "text_editor.server_url is required when backend is 'anytext2'"
+            )
         return errors

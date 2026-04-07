@@ -66,3 +66,10 @@ text_editor:
   backend: "placeholder"
   model_path: null
   device: "cpu"
+  # AnyText2 Gradio server (only used when backend == "anytext2")
+  server_url: null
+  server_timeout: 120
+  anytext2_ddim_steps: 20
+  anytext2_cfg_scale: 7.5
+  anytext2_strength: 1.0
+  anytext2_img_count: 1
