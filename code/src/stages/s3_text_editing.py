@@ -28,10 +28,13 @@ class TextEditingStage:
         if self._editor is None:
             if self.config.backend == "placeholder":
                 self._editor = PlaceholderTextEditor()
+            elif self.config.backend == "anytext2":
+                from src.models.anytext2_editor import AnyText2Editor
+                self._editor = AnyText2Editor(self.config)
             elif self.config.backend == "stage_a":
                 raise NotImplementedError(
                     "Stage A model integration not yet implemented. "
-                    "Use 'placeholder' backend for Stage B testing."
+                    "Use 'placeholder' or 'anytext2' backend."
                 )
             else:
                 raise ValueError(
