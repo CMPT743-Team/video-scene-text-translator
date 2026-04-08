@@ -30,6 +30,7 @@ When wrapping up:
 dev:    python scripts/run_pipeline.py --input <video> --output <out> --source-lang en --target-lang es
 tpm:    python scripts/run_tpm_data_gen_pipeline.py --config config/adv.yaml --input <video> --output-dir <out>
 test:   cd code && python -m pytest tests/ -v
+e2e:    cd code && python -m pytest tests/e2e/ -v   # GPU + AnyText2 server required
 lint:   ruff check code/
 build:  (N/A — not a distributable package)
 
@@ -44,7 +45,7 @@ build:  (N/A — not a distributable package)
 - wordfreq — gibberish OCR detection filtering
 - tqdm — progress bars for long-running stages
 - googletrans 4.0.0-rc1 — translation API (not yet installed)
-- pytest + pytest-cov — testing (140 tests, 136 passing)
+- pytest + pytest-cov — testing (171 unit/integration + 4 e2e tests)
 - ruff — linting and formatting
 
 ## Key Directories
@@ -54,7 +55,7 @@ build:  (N/A — not a distributable package)
 - `code/src/models/` — Stage A model interface (BaseTextEditor ABC) + backends
 - `code/src/utils/` — Geometry, image processing, optical flow, CoTracker online wrapper
 - `code/config/` — default.yaml (classical CV defaults), adv.yaml (CoTracker + PaddleOCR)
-- `code/tests/` — 140 unit + integration tests
+- `code/tests/` — Tiered test suite: `unit/`, `stages/`, `models/`, `integration/`, `e2e/`
 - `code/scripts/` — CLI entry points (run_pipeline.py, run_tpm_data_gen_pipeline.py)
 - `third_party/` — Install scripts for CoTracker, PaddleOCR
 - `_refs/` — Pipeline diagram, milestone report

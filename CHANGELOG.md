@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-04-08 — Test Reorganization & Real E2E Test (feat/anytext2-integration)
+
+### Test Structure
+- Reorganize flat 14-file `tests/` directory into tiered layout: `unit/` (6), `stages/` (6), `models/` (1), `integration/` (1)
+- Add `pytest.ini` with `--ignore=tests/e2e` default — e2e never runs unless explicitly requested
+- Register custom pytest markers: `slow`, `gpu`, `network` for selective test execution
+
+### E2E Tests
+- Add `tests/e2e/` with 4 real end-to-end tests exercising full pipeline (PaddleOCR + CoTracker + AnyText2 server) on GPU
+- Auto-skip fixtures in `e2e/conftest.py`: gracefully skip on machines without GPU, AnyText2 server, or test video
+- Assertions: output video integrity, track detection, non-degenerate AnyText2 ROI, output differs from input
+- Run with: `cd code && python -m pytest tests/e2e/ -v`
+
+### Test Counts
+- 171 unit/stage/model/integration tests (1.3s)
+- 4 real e2e tests (225s on V100)
+
 ## 2026-04-07 — AnyText2 ROI Quality Fix (feat/anytext2-integration)
 
 ### ROI Resolution & Mask
