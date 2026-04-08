@@ -58,7 +58,7 @@ class DetectionConfig:
 class TranslationConfig:
     source_lang: str = "en"
     target_lang: str = "es"
-    backend: str = "googletrans"  # "googletrans" or "google-cloud"
+    backend: str = "deep-translator"  # "deep-translator" or "google-cloud"
     api_key: str | None = None
 
 

@@ -44,7 +44,7 @@ detection:
 translation:
   source_lang: "en"
   target_lang: "es"
-  backend: "googletrans"
+  backend: "deep-translator"
   api_key: null
 
 frontalization:

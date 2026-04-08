@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-07 — Replace googletrans with deep-translator (feat/anytext2-integration)
+
+### Translation Backend
+- Replace `googletrans-py` with `deep-translator` — fixes silent `NoneType` failures on certain inputs (e.g., "WARDEN")
+- `GoogleTranslator` as primary backend with automatic `MyMemoryTranslator` fallback — both free, no API key needed
+- `deep-translator` raises explicit exceptions (`TranslationNotFound`, `RequestError`) instead of crashing silently
+- Update `TranslationConfig.backend` default and both YAML configs from `"googletrans"` to `"deep-translator"`
+- 4 translation tests: success, blank-text short-circuit, Google→MyMemory fallback, both-fail-returns-source
+
 ## 2026-04-06 — AnyText2 Integration (feat/anytext2-integration)
 
 ### Stage A Model
