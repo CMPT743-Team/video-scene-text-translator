@@ -69,7 +69,7 @@ propagation:
   # LCM then BPN). bpn_image_size must match the resolution the
   # checkpoint was trained at.
   use_bpn: true
-  bpn_checkpoint_path: "code/checkpoints/bpn/bpn_stage2_final.pt"
+  bpn_checkpoint_path: "checkpoints/bpn/bpn_v0.pt"
   bpn_device: "cuda"
   bpn_n_neighbors: 3
   bpn_image_size: [64, 128]  # (H, W) at training time

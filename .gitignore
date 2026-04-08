@@ -33,6 +33,7 @@ Thumbs.db
 # Project-specific
 code/debug_output/
 _refs/
+checkpoints/
 code/checkpoints/
 code/eval_output/
 
