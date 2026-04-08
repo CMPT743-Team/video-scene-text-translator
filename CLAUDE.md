@@ -41,6 +41,7 @@ build:  (N/A — not a distributable package)
 - PyYAML — config loading
 - Pillow — image I/O, accented character rendering
 - EasyOCR / PaddleOCR — scene text detection (configurable via `detection.ocr_backend`)
+- LaMa — general-purpose inpainter for S4 background removal (`third_party/lama/`, TorchScript)
 - CoTracker3 — learned point tracking for optical flow (`third_party/co-tracker/`)
 - wordfreq — gibberish OCR detection filtering
 - tqdm — progress bars for long-running stages
@@ -80,6 +81,7 @@ build:  (N/A — not a distributable package)
 - CoTracker requires GPU and checkpoint files in `third_party/co-tracker/checkpoints/` — run `third_party/install_cotracker.sh` first
 - PaddleOCR tests fail if paddleocr is not installed — run `third_party/install_paddleocr.sh` first
 - Two config files: `default.yaml` (classical Farneback + EasyOCR) vs `adv.yaml` (CoTracker + PaddleOCR) — TPM data gen defaults to adv.yaml
+- LaMa requires `big-lama.pt` in `third_party/lama/` — run `third_party/install_lama.sh` to download (~206MB). Uses `torch.jit.load()` (TorchScript)
 
 ## Git
 - Never push directly to main

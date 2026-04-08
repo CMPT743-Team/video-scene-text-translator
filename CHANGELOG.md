@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-04-08 — LaMa Background Inpainter (feat/lama-inpainter)
+
+### LaMa Backend
+- Add LaMa (Large Mask Inpainting, WACV 2022) as a second `BaseBackgroundInpainter` backend for S4, selectable via `inpainter_backend: "lama"` in config
+- Better texture synthesis than SRNet on textured backgrounds (burlap, tiles, brick) thanks to Fourier convolutions trained on Places365
+- Direct TorchScript loading (`torch.jit.load`) — consistent with SRNet/BPN checkpoint pattern, no pip package required
+- Upscale small ROIs to min 256px (LaMa's training resolution) before inference, downscale after
+
+### Text Mask Generation
+- Extend `BaseBackgroundInpainter` ABC with `uses_text_mask: bool` class attribute and `text_mask` keyword-only parameter
+- S4 generates binary text masks via Otsu thresholding + auto-invert (text = minority) + dilation — only computed when the configured inpainter needs one
+- SRNet ignores the mask (infers internally); LaMa requires it
+
+### Configuration & Install
+- `inpainter_backend` now accepts `"srnet"`, `"lama"`, or `"none"`
+- `adv.yaml` includes commented-out LaMa config example
+- `third_party/install_lama.sh` downloads `big-lama.pt` (~206 MB) from GitHub releases
+
+### Testing
+- 15 new tests: mask generation (4), LaMa wrapper with mocked TorchScript (5), inpainter dispatch (4), mask-passing flow (2)
+- 205 tests passing (3.1s), lint clean
+- E2E verified: LaMa + LCM + BPN on real_video6.mp4 (178 frames, "WARDEN" → "GUARDIÁN")
+
 ## 2026-04-08 — Expanded ROI with Scene Context (feat/expanded-roi)
 
 ### ROI Context Expansion

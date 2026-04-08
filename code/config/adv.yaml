@@ -59,10 +59,13 @@ propagation:
   blend_blur_kernel: 5
   use_lcm: true
   # Background inpainter for LCM. Only loaded when use_lcm=True.
-  # Backends: "srnet" (lksshw/SRNet wrapper) or "none".
+  # Backends: "srnet", "lama", or "none".
   inpainter_backend: "srnet"
   inpainter_checkpoint_path: "../third_party/SRNet/checkpoints/trained_final_5M_.model"
   inpainter_device: "cuda"
+  # To use LaMa instead (better on textured backgrounds):
+  # inpainter_backend: "lama"
+  # inpainter_checkpoint_path: "../third_party/lama/big-lama.pt"
   # Blur Prediction Network (TPM/BPN). Applies a per-frame differential
   # blur to the LCM-corrected ROI to match each frame's blur level.
   # Only invoked when both use_lcm and use_bpn are True (paper order:

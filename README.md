@@ -329,7 +329,25 @@ This creates `third_party/SRNet/` with the checkpoint at `third_party/SRNet/chec
 
 > **Note:** Only the background inpainting subnetwork (`_bin`) is used — SRNet's other dependencies are not required.
 
-### 9. Download BPN checkpoint (blur prediction)
+### 9. Install LaMa (optional alternative background inpainter)
+
+LaMa is a general-purpose inpainter that can replace SRNet for background inpainting in S4. It produces better results on textured backgrounds (e.g., burlap, tiles) thanks to Fourier convolutions. The install script downloads the TorchScript checkpoint (~206 MB).
+
+```bash
+cd third_party
+bash install_lama.sh
+cd ..
+```
+
+This creates `third_party/lama/big-lama.pt`. To use LaMa instead of SRNet, set in your config YAML:
+
+```yaml
+propagation:
+  inpainter_backend: "lama"
+  inpainter_checkpoint_path: "../third_party/lama/big-lama.pt"
+```
+
+### 10. Download BPN checkpoint (blur prediction)
 
 The Blur Prediction Network (BPN) predicts per-frame differential blur to match each target frame's sharpness. Download the pretrained checkpoint (~136 MB):
 
@@ -340,7 +358,7 @@ bash checkpoints/download.sh
 
 This creates `checkpoints/bpn/bpn_v0.pt`. Alternatively, download manually from [Google Drive](https://drive.google.com/file/d/1ZUDMCDw6tJka-0Dxkhev2bRvkkLMcKpv/view?usp=drive_link) and place it in `checkpoints/bpn/`.
 
-### 10. AnyText2 server
+### 11. AnyText2 server
 
 AnyText2 runs in a **separate** conda env (Python 3.10) to avoid dependency conflicts.
 See [`third_party/install_anytext2.sh`](third_party/install_anytext2.sh) for setup instructions.

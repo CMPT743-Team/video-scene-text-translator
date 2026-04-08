@@ -1,6 +1,6 @@
 """Tests for Stage 4: Propagation."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
@@ -8,6 +8,7 @@ import pytest
 
 from src.data_types import Quad, TextDetection, TextTrack
 from src.stages.s4_propagation import PropagationStage
+from src.stages.s4_propagation.base_inpainter import BaseBackgroundInpainter
 
 
 @pytest.fixture
@@ -180,3 +181,107 @@ class TestPropagationRun:
         assert len(result[0]) == 1
         # Should still match edited_roi shape via bbox fallback
         assert result[0][0].roi_image.shape[:2] == edited_roi.shape[:2]
+
+
+class TestGenerateTextMask:
+    """Tests for PropagationStage._generate_text_mask()."""
+
+    def test_returns_binary_uint8(self):
+        """Mask should be uint8 with only 0 and 255 values."""
+        roi = np.full((64, 128, 3), 200, dtype=np.uint8)
+        cv2.putText(roi, "AB", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 2)
+        mask = PropagationStage._generate_text_mask(roi)
+        assert mask.dtype == np.uint8
+        assert mask.shape == (64, 128)
+        assert set(np.unique(mask)).issubset({0, 255})
+
+    def test_text_pixels_are_white(self):
+        """On a light background with dark text, text region should be 255."""
+        roi = np.full((100, 200, 3), 240, dtype=np.uint8)
+        cv2.putText(roi, "TEXT", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (10, 10, 10), 3)
+        mask = PropagationStage._generate_text_mask(roi)
+        # Text center should be white (255)
+        assert mask[70, 60] == 255 or mask[50, 60] == 255  # near text region
+
+    def test_auto_invert_dark_background(self):
+        """On a dark background with light text, text should still be minority (255)."""
+        roi = np.full((100, 200, 3), 20, dtype=np.uint8)
+        cv2.putText(roi, "HI", (30, 70), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (240, 240, 240), 3)
+        mask = PropagationStage._generate_text_mask(roi)
+        # Text (minority) should be white; background should be mostly black
+        white_ratio = np.mean(mask == 255)
+        assert white_ratio < 0.5  # text is the minority
+
+    def test_uniform_image_returns_all_zeros(self):
+        """A uniform image has no text — Otsu falls back to all-zero or all-255, then auto-invert."""
+        roi = np.full((64, 64, 3), 128, dtype=np.uint8)
+        mask = PropagationStage._generate_text_mask(roi)
+        assert mask.shape == (64, 64)
+        assert mask.dtype == np.uint8
+        # No text means mask should be all-zero (or nearly — dilation can't create mass from nothing)
+        assert np.mean(mask == 255) < 0.01
+
+
+class TestInpainterDispatch:
+    """Tests for _get_inpainter() dispatching to the right backend."""
+
+    def test_dispatch_srnet(self, default_config):
+        default_config.propagation.inpainter_backend = "srnet"
+        default_config.propagation.inpainter_checkpoint_path = None
+        stage = PropagationStage(default_config)
+        # No checkpoint → returns None with a warning
+        result = stage._get_inpainter()
+        assert result is None
+
+    def test_dispatch_lama(self, default_config):
+        default_config.propagation.inpainter_backend = "lama"
+        default_config.propagation.inpainter_checkpoint_path = None
+        stage = PropagationStage(default_config)
+        # No checkpoint → returns None with a warning
+        result = stage._get_inpainter()
+        assert result is None
+
+    def test_dispatch_none(self, default_config):
+        default_config.propagation.inpainter_backend = "none"
+        stage = PropagationStage(default_config)
+        assert stage._get_inpainter() is None
+
+    def test_dispatch_unknown_raises(self, default_config):
+        default_config.propagation.inpainter_backend = "unknown"
+        stage = PropagationStage(default_config)
+        with pytest.raises(ValueError, match="Unknown inpainter_backend"):
+            stage._get_inpainter()
+
+
+class TestMaskPassingFlow:
+    """Verify that _inpaint() generates and passes masks correctly."""
+
+    def test_mask_passed_when_uses_text_mask_true(self, default_config):
+        """When inpainter.uses_text_mask is True, a mask should be generated and passed."""
+        stage = PropagationStage(default_config)
+        mock_inpainter = MagicMock(spec=BaseBackgroundInpainter)
+        mock_inpainter.uses_text_mask = True
+        mock_inpainter.inpaint.return_value = np.zeros((64, 128, 3), dtype=np.uint8)
+
+        roi = np.full((64, 128, 3), 200, dtype=np.uint8)
+        cv2.putText(roi, "AB", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 2)
+
+        stage._inpaint(mock_inpainter, roi)
+
+        mock_inpainter.inpaint.assert_called_once()
+        call_kwargs = mock_inpainter.inpaint.call_args
+        assert call_kwargs.kwargs["text_mask"] is not None
+        assert call_kwargs.kwargs["text_mask"].shape == (64, 128)
+
+    def test_mask_none_when_uses_text_mask_false(self, default_config):
+        """When inpainter.uses_text_mask is False, text_mask should be None."""
+        stage = PropagationStage(default_config)
+        mock_inpainter = MagicMock(spec=BaseBackgroundInpainter)
+        mock_inpainter.uses_text_mask = False
+        mock_inpainter.inpaint.return_value = np.zeros((64, 128, 3), dtype=np.uint8)
+
+        roi = np.full((64, 128, 3), 200, dtype=np.uint8)
+        stage._inpaint(mock_inpainter, roi)
+
+        call_kwargs = mock_inpainter.inpaint.call_args
+        assert call_kwargs.kwargs["text_mask"] is None

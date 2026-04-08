@@ -74,6 +74,21 @@ class PropagationStage:
                 device=self.config.inpainter_device,
             )
             return self._inpainter
+        if backend == "lama":
+            from .lama_inpainter import LaMaInpainter
+            ckpt = self.config.inpainter_checkpoint_path
+            if not ckpt:
+                logger.warning(
+                    "S4: inpainter_backend=lama but no checkpoint_path "
+                    "configured; LCM will be skipped"
+                )
+                return None
+            logger.info("S4: loading LaMa inpainter from %s", ckpt)
+            self._inpainter = LaMaInpainter(
+                checkpoint_path=ckpt,
+                device=self.config.inpainter_device,
+            )
+            return self._inpainter
         raise ValueError(f"Unknown inpainter_backend: {backend!r}")
 
     def _get_bpn(self):
@@ -134,6 +149,31 @@ class PropagationStage:
             return cv2.warpPerspective(frame, det.H_to_frontal, (w, h))
         return frame[det.bbox.to_slice()]
 
+    @staticmethod
+    def _generate_text_mask(canonical_roi: np.ndarray) -> np.ndarray:
+        """Generate a binary text mask via Otsu thresholding.
+
+        Returns uint8 (H, W) with 255 = text pixels (minority region).
+        """
+        gray = cv2.cvtColor(canonical_roi, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Auto-invert so text (minority) is white
+        if np.mean(binary) > 127:
+            binary = 255 - binary
+        kernel = np.ones((3, 3), np.uint8)
+        return cv2.dilate(binary, kernel, iterations=2)
+
+    def _inpaint(
+        self,
+        inpainter: BaseBackgroundInpainter,
+        canonical_roi: np.ndarray,
+    ) -> np.ndarray:
+        """Run the inpainter, generating a text mask if the backend needs one."""
+        mask = None
+        if inpainter.uses_text_mask:
+            mask = self._generate_text_mask(canonical_roi)
+        return inpainter.inpaint(canonical_roi, text_mask=mask)
+
     def _create_alpha_mask(self, shape: tuple[int, int]) -> np.ndarray:
         """Create a feathered alpha mask for smooth blending.
 
@@ -189,7 +229,7 @@ class PropagationStage:
                 if (inpainter is not None and ref_canonical is not None
                         and ref_canonical.size > 0
                         and ref_det.inpainted_background is None):
-                    ref_det.inpainted_background = inpainter.inpaint(ref_canonical)
+                    ref_det.inpainted_background = self._inpaint(inpainter, ref_canonical)
                 ref_background = ref_det.inpainted_background
 
             # ----- First pass: build per-detection lit ROIs -----
@@ -208,7 +248,7 @@ class PropagationStage:
                 # Inpaint this detection's background on demand if LCM is on
                 if (inpainter is not None
                         and det.inpainted_background is None):
-                    det.inpainted_background = inpainter.inpaint(target_canonical)
+                    det.inpainted_background = self._inpaint(inpainter, target_canonical)
 
                 # Choose LCM if available, else fall back to histogram matching
                 if (self.config.use_lcm

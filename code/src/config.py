@@ -89,7 +89,7 @@ class PropagationConfig:
     lcm_neighbor_self_weight: float = 2.0
 
     # Background inpainter for LCM. Only loaded when use_lcm=True.
-    # Backends: "srnet" (lksshw/SRNet wrapper) or "none".
+    # Backends: "srnet" (lksshw/SRNet wrapper), "lama" (LaMa TorchScript), or "none".
     inpainter_backend: str = "none"
     inpainter_checkpoint_path: str | None = None
     inpainter_device: str = "cuda"

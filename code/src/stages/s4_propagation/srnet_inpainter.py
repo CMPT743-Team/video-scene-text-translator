@@ -97,11 +97,17 @@ class SRNetInpainter(BaseBackgroundInpainter):
     # ------------------------------------------------------------------
 
     @torch.no_grad()
-    def inpaint(self, canonical_roi: np.ndarray) -> np.ndarray:
+    def inpaint(
+        self,
+        canonical_roi: np.ndarray,
+        *,
+        text_mask: np.ndarray | None = None,
+    ) -> np.ndarray:
         """Erase text from a canonical-frontal ROI.
 
         Args:
             canonical_roi: BGR uint8 (H, W, 3).
+            text_mask: Ignored — SRNet infers the mask internally.
 
         Returns:
             BGR uint8 (H, W, 3) — same shape as input — with text removed.
