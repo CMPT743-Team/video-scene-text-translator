@@ -1,80 +1,100 @@
-# Plan: Add LaMa Background Inpainter Backend for S4
+# Plan: Fix LCM Darkening — Separate Global Scale from Spatial Variation
 
 ## Context
-The S4 propagation stage uses a background inpainter to produce text-free backgrounds for LCM (Lighting Correction Module) ratio computation. Currently only SRNet is supported. SRNet's inpainting quality on textured backgrounds (e.g., burlap, tiles) produces artifacts that degrade the LCM lighting ratio, causing washed-out results. LaMa (Large Mask Inpainting, WACV 2022) is a resolution-robust general-purpose inpainter with better texture synthesis via Fourier convolutions.
+The LCM (Lighting Correction Module) systematically darkens edited text ROIs by ~8-9 intensity points. Root cause: neural inpainters (SRNet & LaMa) produce backgrounds that are slightly darker than real backgrounds (regression-to-mean). This bias enters the per-pixel ratio map `target_bg / ref_bg`, making the mean ratio < 1.0, which darkens the edited ROI.
+
+Pure log-domain mean-centering would fix the bias but also remove legitimate global lighting changes (e.g., scene getting darker as camera moves into shadow). We need to separate the two concerns.
 
 ## Goal
-Add LaMa as a second `BaseBackgroundInpainter` backend, selectable via `inpainter_backend: "lama"` in config. Extend the inpainter ABC to accept an optional text mask (LaMa needs one; SRNet doesn't).
+Fix the LCM darkening bias while preserving both spatial lighting variation (shadows, gradients) and legitimate global lighting changes across frames.
 
 ## Approach
 
-### Key Design Decisions
-1. **Extend `BaseBackgroundInpainter.inpaint()` with optional `text_mask` kwarg** — S4 generates the mask via Otsu thresholding + dilation, passes it to whichever inpainter is configured. SRNet ignores it; LaMa uses it. A `uses_text_mask` class-level flag controls whether S4 bothers generating the mask.
-2. **Upscale small ROIs** to min 256px (LaMa's training resolution) before inference, downscale after.
-3. **Direct TorchScript loading** — load `big-lama.pt` via `torch.jit.load()`, no pip package. Install script downloads the 206MB model.
+### Decompose the ratio into spatial variation + global scale
 
-### Text Mask Generation (in `stage.py`)
-- Convert canonical ROI to grayscale → Otsu threshold → auto-invert if majority region (ensure text = minority) → dilate (3×3 kernel, 2 iterations)
-- Only computed when `inpainter.uses_text_mask is True`
-
-```python
-def _generate_text_mask(self, canonical_roi: np.ndarray) -> np.ndarray:
-    gray = cv2.cvtColor(canonical_roi, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    if np.mean(binary) > 127:  # auto-invert: text should be minority
-        binary = 255 - binary
-    kernel = np.ones((3, 3), np.uint8)
-    return cv2.dilate(binary, kernel, iterations=2)
+```
+final_ratio = normalized_spatial_ratio × global_scale
 ```
 
-### LaMa Inference Pipeline (in `lama_inpainter.py`)
-1. Upscale if min(H,W) < 256
-2. BGR→RGB, normalize to [0,1] float32 tensor
-3. Mask: uint8 [0,255] → float32 [0,1] tensor
-4. Pad both to mod-8 (image: reflect, mask: constant 0)
-5. Forward through TorchScript model as separate args: `model(image, mask)`
-6. Crop padding, downscale if upscaled, RGB→BGR uint8
+1. **Spatial variation** — from inpainted backgrounds (ratio map), mean-centered per-channel in log-domain to remove inpainting bias
+2. **Global lighting change** — from raw canonical ROIs (no inpainting, no bias), computed as per-channel mean ratio
 
-### LaMa Model Details
-- Model: `big-lama.pt` TorchScript (~206MB), Apache 2.0 license
-- Download: `https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt`
-- Input: image (1, 3, H, W) float32 RGB [0,1] + mask (1, 1, H, W) float32 [0,1], dims divisible by 8
-- Output: (1, 3, H, W) float32 [0,1]
-- Load: `torch.jit.load(path, map_location=device)` — compatible with PyTorch 1.13+
+### Implementation in `_stable_ratio()` (lighting_correction_module.py, lines 170-183)
+
+```python
+def _stable_ratio(
+    self, ref_bg: np.ndarray, target_bg: np.ndarray,
+    ref_canonical: np.ndarray | None = None,
+    target_canonical: np.ndarray | None = None,
+) -> np.ndarray:
+    ref_f = ref_bg.astype(np.float32) / 255.0
+    cur_f = target_bg.astype(np.float32) / 255.0
+    eps = self.cfg.eps
+
+    if self.cfg.use_log_domain:
+        log_ratio = np.log(cur_f + eps) - np.log(ref_f + eps)
+    else:
+        log_ratio = np.log((cur_f + eps) / (ref_f + eps))
+
+    if self.cfg.normalize_ratio:
+        # Remove inpainting bias: center log-ratio per channel
+        for c in range(log_ratio.shape[2]):
+            log_ratio[..., c] -= np.mean(log_ratio[..., c])
+
+        # Re-inject global lighting from RAW frames (no inpainting bias)
+        if ref_canonical is not None and target_canonical is not None:
+            ref_raw = ref_canonical.astype(np.float32) / 255.0
+            tgt_raw = target_canonical.astype(np.float32) / 255.0
+            for c in range(3):
+                global_log_scale = (
+                    np.log(np.mean(tgt_raw[..., c]) + eps)
+                    - np.log(np.mean(ref_raw[..., c]) + eps)
+                )
+                log_ratio[..., c] += global_log_scale
+
+    ratio = np.exp(log_ratio)
+    ratio = np.clip(ratio, self.cfg.ratio_clip_min, self.cfg.ratio_clip_max)
+    return ratio.astype(np.float32)
+```
+
+### Data flow changes in `stage.py`
+
+The `correct()` and `compute_ratio_map()` methods need the raw canonical ROIs passed through so `_stable_ratio()` can compute the global scale. The call sites at lines 257-261 already have `ref_canonical` and `target_canonical` available — just need to thread them through.
 
 ## Files to Change
-- [x] `code/src/stages/s4_propagation/base_inpainter.py` — Add `text_mask: np.ndarray | None = None` kwarg (keyword-only) + `uses_text_mask: bool = False` class attr
-- [x] `code/src/stages/s4_propagation/srnet_inpainter.py` — Accept and ignore `text_mask`
-- [x] (new) `code/src/stages/s4_propagation/lama_inpainter.py` — LaMa backend (~120 lines)
-- [x] `code/src/stages/s4_propagation/stage.py` — Add `_generate_text_mask()`, `_inpaint()` helper, pass mask at inpaint call sites, add `"lama"` dispatch in `_get_inpainter()`
-- [x] `code/src/config.py` — Update comment on `inpainter_backend` to list "lama"
-- [x] `code/config/adv.yaml` — Add commented-out LaMa config alternative
-- [x] (new) `third_party/install_lama.sh` — Download `big-lama.pt` (~206MB) to `third_party/lama/`
-- [x] `code/tests/stages/test_s4_propagation.py` — Tests for mask generation, LaMa dispatch, mask-passing flow
-- [x] (new) `code/tests/stages/test_lama_inpainter.py` — Unit tests for LaMa wrapper (mocked TorchScript model)
-- [x] `CLAUDE.md` — Add LaMa to gotchas/stack sections
+- [ ] `code/src/stages/s4_propagation/lighting_correction_module.py`
+  - `LCMConfig`: add `normalize_ratio: bool = True`
+  - `_stable_ratio()`: add `ref_canonical` + `target_canonical` params, implement centering + global scale
+  - `compute_ratio_map()`: accept and pass through raw canonicals
+  - `correct()`: accept and pass through raw canonicals
+- [ ] `code/src/stages/s4_propagation/stage.py`
+  - Update `lcm.correct()` call sites (lines 257-261) to pass `ref_canonical` and `target_canonical`
+- [ ] `code/src/config.py`
+  - Add `lcm_normalize_ratio: bool = True` to `PropagationConfig` (line ~89)
+- [ ] `code/config/adv.yaml`
+  - Add `lcm_normalize_ratio: true` (default, can be toggled off)
+- [ ] `code/tests/stages/test_s4_propagation.py`
+  - Test: normalized ratio has geometric mean ≈ 1.0 per channel
+  - Test: global scale from raw frames is re-applied correctly
+  - Test: `normalize_ratio: false` preserves original behavior
+  - Test: uniform-lit scene produces ratio ≈ 1.0 (no darkening)
+  - Test: genuinely darker target produces ratio < 1.0 (darkening preserved)
 
 ## Risks
-- **Otsu mask quality**: May misclassify on low-contrast or multi-color backgrounds. Mitigated by auto-invert heuristic (text = minority region).
-- **Small ROI quality**: ROIs at 64px are below LaMa's 256×256 training resolution. Mitigated by upscaling before inference.
-- **TorchScript deprecation**: Deprecated in PyTorch 2.9 but `torch.jit.load()` still works. Not a concern for course project timeline.
-- **Breaking ABC change**: `inpaint()` signature changes. Only 2 subclasses (SRNet + LaMa), both updated in this plan.
+- **Raw canonical text content**: Both raw canonicals contain original scene text. For global mean computation, text pixels contribute noise. Mitigated: same text track across frames → text contribution roughly cancels in the ratio.
+- **Very small ROIs**: Mean estimate from 64×64 ROI (~4K pixels) may be noisy. Mitigated: global scale is a single scalar per channel, not spatially varying — low variance even with few pixels.
+- **Edge case — all-dark ROI**: If both raw canonicals are near-black, `log(mean + eps)` difference could be noisy. Mitigated: eps prevents log(0), and clipping bounds the final ratio.
 
 ## Done When
-- [x] `inpainter_backend: "lama"` loads and runs LaMa on a canonical ROI
-- [x] `inpainter_backend: "srnet"` still works unchanged (no regression)
-- [x] Text mask generation produces reasonable binary masks on synthetic ROIs
-- [x] Small ROIs (<256px) are upscaled before LaMa inference
-- [x] `third_party/install_lama.sh` downloads checkpoint successfully
-- [ ] All tests pass: `cd code && python -m pytest tests/ -v` (needs conda env)
-- [x] Lint passes: `ruff check code/`
+- [ ] LCM with `normalize_ratio: true` produces no systematic darkening on static-lighting videos
+- [ ] LCM with `normalize_ratio: true` correctly darkens text when scene genuinely gets darker
+- [ ] LCM with `normalize_ratio: false` matches previous behavior exactly (regression test)
+- [ ] All tests pass
+- [ ] Lint passes
 
 ## Progress
-- [x] Step 1: Extend `BaseBackgroundInpainter` ABC — add `text_mask` kwarg and `uses_text_mask`
-- [x] Step 2: Update `SRNetInpainter` — accept and ignore `text_mask`
-- [x] Step 3: Create `LaMaInpainter` backend
-- [x] Step 4: Update `stage.py` — mask generation, mask passing, "lama" dispatch
-- [x] Step 5: Create `third_party/install_lama.sh`
-- [x] Step 6: Update config files (`config.py` comment, `adv.yaml` example)
-- [x] Step 7: Write tests (mask generation, LaMa wrapper, dispatch, integration)
-- [x] Step 8: Lint passes (0 errors in changed files). Tests need conda env (cv2 not in system python). CLAUDE.md updated.
+- [ ] Step 1: Add `lcm_normalize_ratio` to config (`config.py` + `adv.yaml`)
+- [ ] Step 2: Extend LCM methods to accept raw canonicals, implement centering + global scale
+- [ ] Step 3: Thread raw canonicals through `stage.py` call sites
+- [ ] Step 4: Write tests
+- [ ] Step 5: Run full test suite + lint
