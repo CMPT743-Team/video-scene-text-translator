@@ -50,6 +50,16 @@ class RevertStage:
         # Compute target bbox from the detection's quad
         target_bbox = propagated_roi.target_quad.to_bbox()
 
+        # expand the box by a small margin (5% of each dimension, 2 px minimum)
+        expansion_w = max(int(target_bbox.width * 0.05), 2)
+        expansion_h = max(int(target_bbox.height * 0.05), 2)
+        target_bbox = BBox(
+            x=target_bbox.x - expansion_w,
+            y=target_bbox.y - expansion_h,
+            width=target_bbox.width + 2 * expansion_w,
+            height=target_bbox.height + 2 * expansion_h,
+        )
+
         # Clamp bbox to frame bounds
         x1 = max(target_bbox.x, 0)
         y1 = max(target_bbox.y, 0)
@@ -113,6 +123,53 @@ class RevertStage:
         frame[roi_slice] = blended
         return frame
 
+    def composite_roi_into_frame_seamless(
+        self,
+        frame: np.ndarray,
+        warped_roi: np.ndarray,
+        warped_alpha: np.ndarray,
+        target_bbox: BBox,
+        flags: int = cv2.NORMAL_CLONE,
+    ) -> np.ndarray:
+        """Composite the warped ROI into the frame using cv2.seamlessClone.
+
+        Poisson blending alternative to alpha compositing — matches local
+        gradients/lighting at the boundary instead of feathering RGB values.
+        The feathered alpha mask is binarized (>0) to form the clone mask.
+        Relies on the bbox expansion in `warp_roi_to_frame` to guarantee a
+        zero-alpha border so the mask stays strictly interior (a hard
+        requirement of cv2.seamlessClone).
+        """
+        # Binarize the feathered alpha into a clone mask.
+        mask = (warped_alpha > 0).astype(np.uint8) * 255
+        if mask.sum() == 0:
+            return frame
+
+        src = warped_roi
+
+        # Center of the bbox in destination (frame) coordinates.
+        center = (
+            target_bbox.x + target_bbox.width // 2,
+            target_bbox.y + target_bbox.height // 2,
+        )
+
+        # seamlessClone requires the source (centered at `center`) to lie
+        # entirely within the destination. Bail out to alpha blending if not.
+        sh, sw = src.shape[:2]
+        fh, fw = frame.shape[:2]
+        half_w, half_h = sw // 2, sh // 2
+        if (
+            center[0] - half_w < 0
+            or center[1] - half_h < 0
+            or center[0] + (sw - half_w) > fw
+            or center[1] + (sh - half_h) > fh
+        ):
+            return self.composite_roi_into_frame(
+                frame, warped_roi, warped_alpha, target_bbox
+            )
+
+        return cv2.seamlessClone(src, frame, mask, center, flags)
+
     def run(
         self,
         frames: dict[int, np.ndarray],
@@ -154,7 +211,7 @@ class RevertStage:
                     continue
 
                 warped_roi, warped_alpha, target_bbox = result
-                frame = self.composite_roi_into_frame(
+                frame = self.composite_roi_into_frame_seamless(
                     frame, warped_roi, warped_alpha, target_bbox
                 )
 
