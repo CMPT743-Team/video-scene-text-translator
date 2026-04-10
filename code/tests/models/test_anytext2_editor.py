@@ -524,13 +524,20 @@ class TestAdaptiveMask:
 
     @staticmethod
     def _capture_masks(editor_call):
-        """Run *editor_call* while recording any imwrite with 'mask' in path."""
-        captured = []
+        """Run *editor_call* while recording imwrites with 'mask' in path.
+
+        Returns a dict keyed by basename so callers can distinguish the
+        main edit mask (``mask.png``) from the font-mimic mask
+        (``mimic_mask.png``).
+        """
+        import os
+
+        captured: dict[str, np.ndarray] = {}
         original_imwrite = cv2.imwrite
 
         def capture(path, img, *args, **kwargs):
             if "mask" in path:
-                captured.append(img.copy())
+                captured[os.path.basename(path)] = img.copy()
             return original_imwrite(path, img, *args, **kwargs)
 
         with patch("cv2.imwrite", side_effect=capture):
@@ -559,9 +566,11 @@ class TestAdaptiveMask:
         inpainter = _FakeInpainter()
         editor = AnyText2Editor(cfg, inpainter=inpainter)
 
+        mock_client = None
         with tempfile.TemporaryDirectory() as tmpdir:
             # Canonical-ish 7:1 ROI: 560×80 scaled up to AnyText2's grid
-            mock_get_client.return_value = self._server_returning(tmpdir, 512, 3584)
+            mock_client = self._server_returning(tmpdir, 512, 3584)
+            mock_get_client.return_value = mock_client
             roi = np.full((80, 560, 3), 200, dtype=np.uint8)
 
             captured = self._capture_masks(
@@ -572,15 +581,23 @@ class TestAdaptiveMask:
         assert inpainter.call_count == 1
         assert inpainter.last_shape == (80, 560, 3)
 
-        # Mask was written and is narrower than "full-width"
-        assert len(captured) == 1
-        alpha = captured[0][:, :, 3]
-        # Count masked columns per row (rows are uniform in our rect mask)
-        masked_cols_any_row = (alpha[alpha.shape[0] // 2] == 255).sum()
-        total_cols = alpha.shape[1]
+        # Both main (narrow) and font-mimic (wide) masks written
+        assert "mask.png" in captured
+        assert "mimic_mask.png" in captured
+
+        # Main edit mask is narrowed toward the target aspect ratio
+        main_alpha = captured["mask.png"][:, :, 3]
+        main_cols = int((main_alpha[main_alpha.shape[0] // 2] == 255).sum())
+        total_cols = main_alpha.shape[1]
         # New mask ≈ 240/560 × total_cols ≈ 43% of the width
-        # Non-adaptive would cover 100% of the content columns → > 95%
-        assert masked_cols_any_row < 0.6 * total_cols
+        assert main_cols < 0.6 * total_cols
+
+        # Font-mimic mask preserves the original (wide) extent so the
+        # font encoder sees complete source glyphs.
+        mimic_alpha = captured["mimic_mask.png"][:, :, 3]
+        mimic_cols = int((mimic_alpha[mimic_alpha.shape[0] // 2] == 255).sum())
+        assert mimic_cols > main_cols
+        assert mimic_cols >= 0.9 * total_cols
 
     @patch("src.models.anytext2_editor.AnyText2Editor._get_client")
     @patch.dict("sys.modules", {"gradio_client": MagicMock(handle_file=_make_mock_handle_file())})

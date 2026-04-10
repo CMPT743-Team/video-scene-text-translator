@@ -142,12 +142,20 @@ class AnyText2Editor(BaseTextEditor):
             color_region = roi_image
         text_color = self._extract_text_color(color_region)
 
+        # Save pre-adaptive references for the font-mimic input. When the
+        # adaptive flow fires, m1 should see the ORIGINAL source glyphs
+        # (not the SRNet-rewritten hybrid) so AnyText2's font encoder
+        # extracts the correct upright style.
+        mimic_roi_image = roi_image
+        mimic_edit_region = edit_region
+
         # Apply adaptive mask sizing if configured + inpainter available.
         # May rewrite roi_image and narrow edit_region to a shrunk, centered
         # strip inside the canonical text area. Silent no-op otherwise.
         roi_image, edit_region = self._apply_adaptive_mask(
             roi_image, target_text, edit_region,
         )
+        adaptive_fired = roi_image is not mimic_roi_image
 
         # Upscale, 64-align, and pad — returns prepared image + content region
         min_gen = self.config.anytext2_min_gen_size
@@ -155,22 +163,22 @@ class AnyText2Editor(BaseTextEditor):
         h_send, w_send = roi_prepared.shape[:2]
         ct, cb, cl, cr = content_rect  # top, bottom, left, right
 
-        # Compute mask_rect: the region AnyText2 should edit.
-        # When edit_region is provided, mask only that sub-area (text only).
-        # Otherwise, mask the entire content rectangle.
-        if edit_region is not None:
-            et, eb, el, er = edit_region
-            pad_top = ct
-            pad_left = cl
-            mask_rect = (
-                max(0, pad_top + int(round(et * scale))),
-                min(h_send, pad_top + int(round(eb * scale))),
-                max(0, pad_left + int(round(el * scale))),
-                min(w_send, pad_left + int(round(er * scale))),
+        def _rect_for_region(
+            region: tuple[int, int, int, int] | None,
+        ) -> tuple[int, int, int, int]:
+            """Translate an ROI-space edit region into send-space coords."""
+            if region is None:
+                return content_rect
+            r_t, r_b, r_l, r_r = region
+            return (
+                max(0, ct + int(round(r_t * scale))),
+                min(h_send, ct + int(round(r_b * scale))),
+                max(0, cl + int(round(r_l * scale))),
+                min(w_send, cl + int(round(r_r * scale))),
             )
-        else:
-            mask_rect = content_rect
 
+        # Main mask: the (possibly narrowed) region AnyText2 should edit.
+        mask_rect = _rect_for_region(edit_region)
         mt, mb, ml, mr = mask_rect
 
         # Save images to temp files (Gradio API needs file paths)
@@ -188,8 +196,36 @@ class AnyText2Editor(BaseTextEditor):
             if not cv2.imwrite(mask_path, mask):
                 raise RuntimeError(f"Failed to write temp mask image to {mask_path}")
 
+            # When adaptive fired, give m1 (font-mimic) the pre-adaptive
+            # ROI + original-extent mask so AnyText2's font encoder sees
+            # complete source glyphs and extracts the correct style.
+            # ref_img keeps the hybrid + narrow mask for the actual edit.
+            mimic_ori_path: str | None = None
+            mimic_mask_path: str | None = None
+            if adaptive_fired:
+                mimic_ori_path = str(Path(tmpdir) / "mimic_ori.png")
+                mimic_mask_path = str(Path(tmpdir) / "mimic_mask.png")
+
+                mimic_prepared, _, _ = self._prepare_roi(
+                    mimic_roi_image, min_gen,
+                )
+                if not cv2.imwrite(mimic_ori_path, mimic_prepared):
+                    raise RuntimeError(
+                        f"Failed to write mimic ROI to {mimic_ori_path}"
+                    )
+
+                mmt, mmb, mml, mmr = _rect_for_region(mimic_edit_region)
+                mimic_mask_arr = np.zeros((h_send, w_send, 4), dtype=np.uint8)
+                mimic_mask_arr[mmt:mmb, mml:mmr, 3] = 255
+                if not cv2.imwrite(mimic_mask_path, mimic_mask_arr):
+                    raise RuntimeError(
+                        f"Failed to write mimic mask to {mimic_mask_path}"
+                    )
+
             result_image = self._call_server(
                 ori_path, mask_path, target_text, text_color, w_send, h_send,
+                mimic_ori_path=mimic_ori_path,
+                mimic_mask_path=mimic_mask_path,
             )
 
         # Crop out the content region (strip padding), then resize to original
@@ -300,6 +336,7 @@ class AnyText2Editor(BaseTextEditor):
             "width %d (centered), target_text=%r",
             canonical_w, canonical_h, strip_r - strip_l, target_text,
         )
+
         return new_roi, new_edit_region
 
     def _call_server(
@@ -310,14 +347,23 @@ class AnyText2Editor(BaseTextEditor):
         text_color: str,
         w: int,
         h: int,
+        mimic_ori_path: str | None = None,
+        mimic_mask_path: str | None = None,
     ) -> np.ndarray:
-        """Send an edit request to the AnyText2 Gradio server."""
+        """Send an edit request to the AnyText2 Gradio server.
+
+        When *mimic_ori_path* / *mimic_mask_path* are provided (adaptive
+        mask path), ``m1`` uses a separate pre-adaptive ROI + wide mask
+        so the font encoder sees complete source glyphs. ``ref_img`` and
+        ``ori_img`` still use *ori_path* (the adaptive hybrid canvas).
+        """
         from gradio_client import handle_file  # lazy import
 
         client = self._get_client()
 
-        # ref_img: background is the original, layers[0] is an RGBA image
-        # where the alpha channel marks the edit region.
+        # ref_img: background is the (possibly adaptive-hybrid) image,
+        # layers[0] is an RGBA image where the alpha channel marks the
+        # edit region.
         ref_img = {
             "background": handle_file(ori_path),
             "layers": [handle_file(mask_path)],
@@ -326,16 +372,21 @@ class AnyText2Editor(BaseTextEditor):
         }
         ori_img = handle_file(ori_path)
 
-        # m1: ROI image for "Mimic From Image" font extraction.
-        # Background is the source image; layer alpha marks font region.
+        # Null placeholder for unused font image editors (m2-m5)
+        null_img = {"background": None, "layers": [], "composite": None, "id": None}
+
+        # m1: ROI image for "Mimic From Image" font extraction. When the
+        # adaptive path provides separate mimic files, use them so the
+        # font encoder reads the full original source glyphs instead of
+        # a narrow middle strip (which would cause italic slant).
+        mimic_bg = mimic_ori_path or ori_path
+        mimic_layer = mimic_mask_path or mask_path
         mimic_img = {
-            "background": handle_file(ori_path),
-            "layers": [handle_file(mask_path)],
+            "background": handle_file(mimic_bg),
+            "layers": [handle_file(mimic_layer)],
             "composite": None,
             "id": None,
         }
-        # Null placeholder for unused font image editors (m2-m5)
-        null_img = {"background": None, "layers": [], "composite": None, "id": None}
 
         # AnyText2 text_prompt: text must be wrapped in literal double quotes
         # so that modify_prompt() regex can find it.
