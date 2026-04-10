@@ -34,14 +34,20 @@ Thumbs.db
 code/debug_output/
 _refs/
 checkpoints/bpn/
+checkpoints/refiner/
 code/checkpoints/
 code/eval_output/
+saved_videos/
 
 # Claude Code (track commands/agents/skills, ignore local files)
 .claude/local.md
 .claude/settings.local.json
 .claude/plans/
-test_data/*.mp4
+test_data/
+docs/debug/
+
+code/config/_run_*.yaml
+docs/STRIVE.pdf
 
 # installed third-party code
 third_party/co-tracker/
