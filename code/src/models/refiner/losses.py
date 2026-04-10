@@ -193,6 +193,52 @@ def masked_ncc(
 
 
 # ---------------------------------------------------------------------------
+# Consistency losses (Tier 2)
+# ---------------------------------------------------------------------------
+
+
+def reverse_consistency_loss(
+    pred_st: torch.Tensor, pred_ts: torch.Tensor,
+) -> torch.Tensor:
+    """Bidirectional consistency: forward + backward offsets should cancel.
+
+    Established in Zhang et al. ECCV 2020 (Content-Aware Unsupervised
+    Deep Homography, Eq. 6: ``μ·‖H_ab·H_ba − I‖²`` with ``μ=0.01``).
+    Here we operate in corner-offset space where the linearization
+    ``pred_st + pred_ts ≈ 0`` is an excellent approximation for
+    near-identity residuals.
+
+    Args:
+        pred_st: ``(B, 4, 2)`` corner offsets for source → target.
+        pred_ts: ``(B, 4, 2)`` corner offsets for target → source.
+
+    Returns:
+        Scalar (``()``) mean smooth-L1 over the batch.
+    """
+    return F.smooth_l1_loss(pred_st + pred_ts, torch.zeros_like(pred_st))
+
+
+def temporal_smoothness_loss(
+    pred_t: torch.Tensor, pred_t1: torch.Tensor,
+) -> torch.Tensor:
+    """Temporal smoothness: predictions on adjacent targets should be close.
+
+    Not standard in deep homography literature but well-motivated for our
+    use case (fixed reference, sequential targets, jitter is the dominant
+    failure mode). Adjacent frames in a real video track differ by ~1/30 s
+    of camera motion, so their ΔH predictions should be nearly identical.
+
+    Args:
+        pred_t:  ``(B, 4, 2)`` corner offsets for ref → target_t.
+        pred_t1: ``(B, 4, 2)`` corner offsets for ref → target_{t+1}.
+
+    Returns:
+        Scalar (``()``) mean smooth-L1 over the batch.
+    """
+    return F.smooth_l1_loss(pred_t, pred_t1)
+
+
+# ---------------------------------------------------------------------------
 # Top-level loss module
 # ---------------------------------------------------------------------------
 
@@ -206,6 +252,8 @@ class RefinerLossWeights:
     ncc: float = 1.0      # Type B illumination-invariant alignment
     grad: float = 1.0     # Type B edge-structure alignment
     reg: float = 0.01     # Type B corner magnitude regularization
+    reverse: float = 0.0  # Tier 2: bidirectional consistency (Type B triplets)
+    temporal: float = 0.0  # Tier 2: temporal smoothness (Type B triplets)
 
 
 class RefinerLoss(nn.Module):

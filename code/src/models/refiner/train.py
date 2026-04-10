@@ -26,6 +26,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -119,6 +120,7 @@ def create_dataloaders(
         min_track_length=dc.get("min_track_length", 2),
         cache_in_ram=dc.get("cache_in_ram", False),
         seed=seed,
+        triplet_fraction=dc.get("triplet_fraction", 0.0),
     )
     train_ds = RefinerDataset(video_names=train_videos, **common)
     val_ds = RefinerDataset(video_names=val_videos, **common)
@@ -156,6 +158,8 @@ def train_one_epoch(
     model.train()
     totals: dict[str, float] = {}
     n_batches = 0
+    n_triplet_batches = 0
+    w = criterion.weights
     pbar = tqdm(loader, desc="train", leave=False, disable=not progress)
     for batch in pbar:
         source = batch["source"].to(device, non_blocking=True)
@@ -165,19 +169,58 @@ def train_one_epoch(
 
         pred = model(source, target)
         losses = criterion(source, target, pred, delta_gt, has_gt)
+        total = losses["total"]
+
+        # --- Tier 2 consistency losses (only on triplet samples) ---
+        has_triplet = batch["has_triplet"].to(device, non_blocking=True)
+        if has_triplet.any() and (w.reverse > 0 or w.temporal > 0):
+            n_triplet_batches += 1
+            triplet_mask = has_triplet.float()
+            n_triplet = triplet_mask.sum().clamp(min=1e-6)
+
+            # Reverse: model(target, source) should produce -pred
+            if w.reverse > 0:
+                pred_ts = model(target, source)
+                # Per-sample loss, averaged over triplet samples only
+                rev_per_sample = F.smooth_l1_loss(
+                    pred + pred_ts, torch.zeros_like(pred), reduction="none",
+                ).mean(dim=(1, 2))
+                rev_loss = (rev_per_sample * triplet_mask).sum() / n_triplet
+                total = total + w.reverse * rev_loss
+                losses["reverse"] = rev_loss.detach()
+
+            # Temporal: model(source, target_neighbor) ≈ pred
+            if w.temporal > 0:
+                target_nb = batch["target_neighbor"].to(device, non_blocking=True)
+                pred_nb = model(source, target_nb)
+                temp_per_sample = F.smooth_l1_loss(
+                    pred, pred_nb, reduction="none",
+                ).mean(dim=(1, 2))
+                temp_loss = (temp_per_sample * triplet_mask).sum() / n_triplet
+                total = total + w.temporal * temp_loss
+                losses["temporal"] = temp_loss.detach()
 
         optimizer.zero_grad(set_to_none=True)
-        losses["total"].backward()
+        total.backward()
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
         optimizer.step()
 
         for k, v in losses.items():
-            totals[k] = totals.get(k, 0.0) + v.item()
+            totals[k] = totals.get(k, 0.0) + (v.item() if hasattr(v, 'item') else float(v))
         n_batches += 1
-        pbar.set_postfix(loss=f"{losses['total'].item():.4f}")
+        pbar.set_postfix(loss=f"{total.item():.4f}")
 
-    return {k: v / max(1, n_batches) for k, v in totals.items()}
+    result = {k: v / max(1, n_batches) for k, v in totals.items()}
+    # Consistency losses only fire on batches with triplets. Average over
+    # the number of batches where they were actually computed, and ensure
+    # the keys always exist for downstream logging/JSON.
+    for key in ("reverse", "temporal"):
+        if key in result and n_triplet_batches > 0:
+            result[key] = totals[key] / n_triplet_batches
+        else:
+            result.setdefault(key, 0.0)
+    return result
 
 
 @torch.no_grad()
@@ -292,6 +335,8 @@ def train(config: dict) -> dict[str, Any]:
         ncc=lc.get("ncc", 1.0),
         grad=lc.get("grad", 1.0),
         reg=lc.get("reg", 0.01),
+        reverse=lc.get("reverse", 0.0),
+        temporal=lc.get("temporal", 0.0),
     )
     criterion = RefinerLoss(
         image_size=image_size,
@@ -361,10 +406,14 @@ def train(config: dict) -> dict[str, Any]:
     history: list[dict[str, Any]] = []
     log_path = ckpt_dir / "train_log.json"
 
+    triplet_frac = float(dc.get("triplet_fraction", 0.0))
+
     for epoch in range(start_epoch, epochs):
         rp_frac = real_pair_fraction_from_schedule(epoch, schedule)
         train_loader.dataset.real_pair_fraction = rp_frac  # type: ignore[attr-defined]
         val_loader.dataset.real_pair_fraction = rp_frac    # type: ignore[attr-defined]
+        train_loader.dataset.triplet_fraction = triplet_frac  # type: ignore[attr-defined]
+        val_loader.dataset.triplet_fraction = triplet_frac    # type: ignore[attr-defined]
 
         train_losses = train_one_epoch(
             model, train_loader, criterion, optimizer, device,
@@ -377,11 +426,13 @@ def train(config: dict) -> dict[str, Any]:
         current_lr = optimizer.param_groups[0]["lr"]
         logger.info(
             "Epoch %d/%d | real_frac=%.2f | train total=%.4f "
-            "(corner=%.4f recon=%.4f ncc=%.4f grad=%.4f) | "
+            "(corner=%.4f recon=%.4f ncc=%.4f grad=%.4f "
+            "rev=%.4f temp=%.4f) | "
             "val total=%.4f corner_err=%.3f px | lr=%.2e",
             epoch + 1, epochs, rp_frac,
             train_losses["total"], train_losses["corner"], train_losses["recon"],
             train_losses["ncc"], train_losses["grad"],
+            train_losses.get("reverse", 0.0), train_losses.get("temporal", 0.0),
             val_losses["total"], val_losses["corner_err_px"], current_lr,
         )
 

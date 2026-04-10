@@ -60,6 +60,7 @@ class RefinerDataset(Dataset):
         min_track_length: int = 2,
         seed: int = 42,
         cache_in_ram: bool = False,
+        triplet_fraction: float = 0.0,
     ):
         """
         Args:
@@ -81,6 +82,11 @@ class RefinerDataset(Dataset):
                 sample-time randomness.
             cache_in_ram: If True, preload all frames into a single contiguous
                 uint8 ndarray (BPN-style, fork-safe).
+            triplet_fraction: Fraction of Type B samples that include a
+                ``target_neighbor`` (the frame adjacent to the target in
+                the track). Mutable — the training loop can ramp it.
+                When > 0, enables temporal smoothness and reverse
+                consistency losses. Requires tracks with ≥ 3 frames.
         """
         super().__init__()
         self.data_root = Path(data_root)
@@ -91,6 +97,7 @@ class RefinerDataset(Dataset):
         self.photometric_strength = float(photometric_strength)
         self.min_track_length = int(min_track_length)
         self.cache_in_ram = cache_in_ram
+        self.triplet_fraction = float(triplet_fraction)
 
         self.track_paths: list[list[str]] = []  # track_idx -> frame paths
         self.track_names: list[str] = []        # track_idx -> "video/track"
@@ -213,8 +220,10 @@ class RefinerDataset(Dataset):
         return {
             "source": source,
             "target": target,
+            "target_neighbor": torch.zeros_like(target),
             "delta_corners_gt": delta,
             "has_gt_corners": torch.tensor(True),
+            "has_triplet": torch.tensor(False),
             "sample_type": "syn",
         }
 
@@ -229,11 +238,30 @@ class RefinerDataset(Dataset):
         source = self._augment(source, strength)
         target = self._augment(target, strength)
 
+        # Triplet mode: also load a frame adjacent to the target for
+        # temporal smoothness + reverse consistency losses.
+        is_triplet = (
+            self.triplet_fraction > 0
+            and n_frames >= 3
+            and random.random() < self.triplet_fraction
+        )
+        if is_triplet:
+            # Pick an adjacent frame to j. Prefer j+1; if j is the last
+            # frame, use j-1.
+            j_neighbor = j + 1 if j + 1 < n_frames else j - 1
+            target_neighbor = self._load_frame(track_idx, j_neighbor)
+            target_neighbor = self._augment(target_neighbor, strength)
+        else:
+            # Placeholder zeros — collation needs a fixed shape per batch.
+            target_neighbor = torch.zeros_like(target)
+
         return {
             "source": source,
             "target": target,
+            "target_neighbor": target_neighbor,
             "delta_corners_gt": torch.zeros(4, 2),
             "has_gt_corners": torch.tensor(False),
+            "has_triplet": torch.tensor(is_triplet),
             "sample_type": "real",
         }
 
