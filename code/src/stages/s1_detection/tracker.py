@@ -57,6 +57,36 @@ def quad_coverage(candidate: Quad, existing: Quad) -> float:
         return 0.0
 
 
+def generate_quad_grid(
+    corners: np.ndarray, grid_size: int,
+) -> np.ndarray:
+    """Generate a grid of points inside a quad via bilinear interpolation.
+
+    Args:
+        corners: (4, 2) quad corners in TL, TR, BR, BL order.
+        grid_size: number of interior samples per axis (e.g. 3 = 3×3 = 9
+            interior points). The 4 corners are prepended, giving
+            ``4 + grid_size**2`` total points.
+
+    Returns:
+        (4 + grid_size**2, 2) float32 array. First 4 rows are the
+        original corners so indexing ``[:4]`` recovers them.
+    """
+    pts = [corners.astype(np.float32)]
+    if grid_size > 0:
+        tl, tr, br, bl = corners[0], corners[1], corners[2], corners[3]
+        for iy in range(grid_size):
+            # Parametric v in (0, 1) excluding the boundary
+            v = (iy + 1) / (grid_size + 1)
+            left = tl + v * (bl - tl)
+            right = tr + v * (br - tr)
+            for ix in range(grid_size):
+                u = (ix + 1) / (grid_size + 1)
+                pt = left + u * (right - left)
+                pts.append(pt.reshape(1, 2).astype(np.float32))
+    return np.concatenate(pts, axis=0)
+
+
 class TextTracker:
     """Groups detections into tracks and fills gaps via optical flow."""
 
@@ -388,12 +418,19 @@ class TextTracker:
 
                 quad = Quad(points=filtered_points)
 
+                # Carry over the full tracked grid (corners + interior)
+                # from CoTracker, if present. S2 uses these for robust
+                # multi-point homography fitting.
+                orig_quad = tracked_quads.get(frame_idx)
+                grid_pts = getattr(orig_quad, "_tracked_grid", None) if orig_quad is not None else None
+
                 track.detections[frame_idx] = TextDetection(
                     frame_idx=frame_idx,
                     quad=quad,
                     bbox=quad.to_bbox(),
                     text=track.source_text,
                     ocr_confidence=0.0,
+                    tracked_grid_points=grid_pts,
                 )
 
         return tracks
@@ -426,7 +463,12 @@ class TextTracker:
                 if track_frame_idx_start <= i <= track_frame_idx_end
             ]
 
-            ref_points = np.asarray(ref_det.quad.points, dtype=np.float32)
+            grid_size = getattr(self.config, "cotracker_grid_size", 0)
+            ref_corners = np.asarray(ref_det.quad.points, dtype=np.float32)
+            if grid_size > 0:
+                ref_points = generate_quad_grid(ref_corners, grid_size)
+            else:
+                ref_points = ref_corners
 
             tracked_points = self._cotracker.track_points_batch(
                 frames,
@@ -435,10 +477,20 @@ class TextTracker:
                 ref_points,
             )
 
-            return {
-                idx: Quad(points=pts.tolist() if isinstance(pts, np.ndarray) else pts)
-                for idx, pts in tracked_points.items()
-            }
+            result: dict[int, Quad] = {}
+            for idx, pts in tracked_points.items():
+                # First 4 rows are always the quad corners
+                corners = pts[:4] if isinstance(pts, np.ndarray) else np.array(pts[:4])
+                quad = Quad(points=corners.tolist() if isinstance(corners, np.ndarray) else corners)
+                result[idx] = quad
+                # Store the full grid on the track's detection if it
+                # already exists, or mark it for storage later in fill_gaps.
+                # We use a transient attribute on the Quad to carry the
+                # grid through to fill_gaps where the TextDetection is
+                # created. This avoids changing the return type.
+                if grid_size > 0 and isinstance(pts, np.ndarray) and pts.shape[0] > 4:
+                    quad._tracked_grid = pts.astype(np.float32)  # type: ignore[attr-defined]
+            return result
 
         tracked_quads: dict[int, Quad] = {}
 
@@ -452,7 +504,7 @@ class TextTracker:
 
         forward_idxs = [
             i for i in all_frame_idxs
-            if i >= ref_idx and track_frame_idx_start <= i <= track_frame_idx_end
+            #if i >= ref_idx and track_frame_idx_start <= i <= track_frame_idx_end
         ]
         self._propagate_quads(forward_idxs, frames, tracked_quads)
 

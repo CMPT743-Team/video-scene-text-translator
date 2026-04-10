@@ -42,6 +42,11 @@ class DetectionConfig:
     cotracker_online_checkpoint: str = "../third_party/co-tracker/checkpoints/scaled_online.pth"
     cotracker_window_len: int = 60
     cotracker_online_window_len: int = 16
+    # Track a grid of interior points inside each quad in addition to the
+    # 4 corners. S2 uses all tracked points to fit a more robust homography
+    # via RANSAC (geometric averaging reduces per-point jitter).
+    # 0 = corners only (4 points). 3 = 3x3 interior grid + 4 corners = 13.
+    cotracker_grid_size: int = 0
     farneback_pyr_scale: float = 0.5
     farneback_levels: int = 3
     farneback_winsize: int = 15
