@@ -194,6 +194,11 @@ class TextEditorConfig:
     # Gives AnyText2 visual context for better style matching.
     # 0.0 = no expansion (current behavior), 0.3 = 30% margin on each side.
     roi_context_expansion: float = 0.0
+    # Match the edited ROI's luminance histogram to the original unedited
+    # reference ROI immediately after text editing. Corrects AnyText2's
+    # tendency to produce overly-bright text by re-baselining the luminance
+    # distribution before S4's per-frame adaptation.
+    match_edited_histogram: bool = True
 
 
 @dataclass

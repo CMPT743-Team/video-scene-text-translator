@@ -175,14 +175,33 @@ class TextEditingStage:
                 )
                 continue
 
+            # Keep a reference to the original canonical ROI (before editing)
+            # for optional post-edit histogram matching.
+            if edit_region is not None:
+                et, eb, el, er = edit_region
+                original_canonical = roi[et:eb, el:er].copy()
+            else:
+                original_canonical = roi.copy()
+
             edited_roi = editor.edit_text(
                 roi, track.target_text, edit_region=edit_region,
             )
 
             # When expanded, crop back to the original canonical area
             if edit_region is not None:
-                et, eb, el, er = edit_region
                 edited_roi = edited_roi[et:eb, el:er]
+
+            # Match the edited ROI's luminance to the original unedited ROI.
+            # Corrects brightness shifts introduced by AnyText2 (e.g. overly
+            # bright generated text) so S4's per-frame adaptation starts from
+            # the correct baseline.
+            if self.config.match_edited_histogram and original_canonical.size > 0:
+                from src.utils.image_processing import match_histogram_luminance
+
+                edited_roi = match_histogram_luminance(
+                    source=edited_roi,
+                    reference=original_canonical,
+                )
 
             track.edited_roi = edited_roi
             logger.debug(
