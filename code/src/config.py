@@ -167,6 +167,18 @@ class RevertConfig:
     use_refiner_gate: bool = True
     refiner_score_margin: float = 0.01
 
+    # Pre-composite background inpainting. Before compositing each
+    # edited ROI, warp the underlying frame region (expanded slightly
+    # beyond the detection quad) into a rectangle, run SRNet to erase
+    # any original text that might leak past the quad edges, then warp
+    # back. This prevents Poisson blending artifacts caused by remnant
+    # original text at the boundary when the tracking quad doesn't
+    # perfectly cover the source text.
+    pre_inpaint: bool = False
+    pre_inpaint_expansion: float = 0.15  # expand quad by this fraction from centroid
+    pre_inpaint_checkpoint: str = "../third_party/SRNet/checkpoints/trained_final_5M_.model"
+    pre_inpaint_device: str = "cuda"
+
     # Temporal smoothing of the final projected quad corners across
     # frames within each track. Applies a center-weighted (Gaussian)
     # moving average to the 4 corner trajectories in frame space,
