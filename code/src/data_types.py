@@ -94,6 +94,10 @@ class TextDetection:
     contrast_score: float = 0.0
     frontality_score: float = 0.0
     composite_score: float = 0.0
+    # Extra tracked grid points (4 corners + N×N interior) used by S2
+    # for more robust homography fitting via RANSAC. None when
+    # cotracker_grid_size=0 (corners-only mode). Shape: (M, 2) float32.
+    tracked_grid_points: np.ndarray | None = None
     # Homography fields — populated by S2 frontalization
     H_to_frontal: np.ndarray | None = None  # 3x3: frame → canonical frontal
     H_from_frontal: np.ndarray | None = None  # 3x3: canonical frontal → frame
@@ -127,7 +131,7 @@ class TextTrack:
         """Quad from the reference frame's detection."""
         det = self.detections.get(self.reference_frame_idx)
         return det.quad if det else None
-    
+
     def to_json_serializable(self) -> dict:
         """Convert to a JSON-serializable dict (e.g. for logging or output)."""
         return {
@@ -159,7 +163,7 @@ class TextTrack:
                 for idx, det in self.detections.items()
             },
         }
-    
+
     @classmethod
     def from_json_serializable(cls, data: dict) -> TextTrack:
         """Create a TextTrack from a JSON-deserialized dict."""

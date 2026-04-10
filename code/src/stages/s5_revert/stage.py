@@ -55,6 +55,8 @@ class RevertStage:
                 use_gate=self.config.use_refiner_gate,
                 score_margin=self.config.refiner_score_margin,
             )
+        # Pre-composite inpainter — lazy loaded on first use.
+        self._pre_inpainter = None
 
     def warp_roi_to_frame(
         self,
@@ -287,6 +289,107 @@ class RevertStage:
         w = np.where(np.abs(w) < 1e-12, 1e-12, w)
         return (proj[:, :2] / w).astype(np.float64)
 
+    def _get_pre_inpainter(self):
+        """Lazy-load the SRNet inpainter for pre-composite background clearing."""
+        if self._pre_inpainter is not None:
+            return self._pre_inpainter
+        from src.stages.s4_propagation.srnet_inpainter import SRNetInpainter
+        logger.info("S5: loading pre-composite inpainter from %s",
+                     self.config.pre_inpaint_checkpoint)
+        self._pre_inpainter = SRNetInpainter(
+            checkpoint_path=self.config.pre_inpaint_checkpoint,
+            device=self.config.pre_inpaint_device,
+        )
+        return self._pre_inpainter
+
+    @staticmethod
+    def _expand_quad_from_centroid(
+        corners: np.ndarray, ratio: float,
+    ) -> np.ndarray:
+        """Expand a (4, 2) quad outward from its centroid by ``ratio``.
+
+        Each corner moves ``ratio * (corner - centroid)`` further from
+        the center. Returns (4, 2) float32.
+        """
+        centroid = corners.mean(axis=0)
+        expanded = centroid + (1.0 + ratio) * (corners - centroid)
+        return expanded.astype(np.float32)
+
+    def _pre_inpaint_region(
+        self,
+        frame: np.ndarray,
+        quad_corners: np.ndarray,
+    ) -> np.ndarray:
+        """Inpaint the text region in-place on ``frame`` before compositing.
+
+        1. Expand the quad outward from its centroid.
+        2. Warp the expanded region to a rectangle.
+        3. Run SRNet to erase any text.
+        4. Warp the inpainted result back into the frame.
+
+        Returns the modified frame (may be a new array or in-place).
+        """
+        expansion = self.config.pre_inpaint_expansion
+        inpainter = self._get_pre_inpainter()
+
+        # Expand the quad
+        expanded = self._expand_quad_from_centroid(
+            quad_corners.astype(np.float32), expansion,
+        )
+
+        # Determine the output rectangle size preserving the quad's
+        # approximate aspect ratio. Use the average edge lengths.
+        top_w = float(np.linalg.norm(expanded[1] - expanded[0]))
+        bot_w = float(np.linalg.norm(expanded[2] - expanded[3]))
+        left_h = float(np.linalg.norm(expanded[3] - expanded[0]))
+        right_h = float(np.linalg.norm(expanded[2] - expanded[1]))
+        rect_w = max(4, int(round((top_w + bot_w) / 2)))
+        rect_h = max(4, int(round((left_h + right_h) / 2)))
+
+        dst_rect = np.array(
+            [[0, 0], [rect_w, 0], [rect_w, rect_h], [0, rect_h]],
+            dtype=np.float32,
+        )
+
+        # Warp frame region to rectangle
+        H_to_rect = cv2.getPerspectiveTransform(expanded, dst_rect)
+        rect_crop = cv2.warpPerspective(
+            frame, H_to_rect, (rect_w, rect_h),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+
+        # Inpaint
+        inpainted = inpainter.inpaint(rect_crop)
+
+        # Warp back into the frame
+        H_from_rect = cv2.getPerspectiveTransform(dst_rect, expanded)
+        frame_h, frame_w = frame.shape[:2]
+
+        # Only overwrite the region covered by the expanded quad, not
+        # the whole frame. Use a mask to avoid touching pixels outside.
+        # BORDER_REPLICATE so edge pixels of the inpainted image extend
+        # outward instead of blending with black — prevents the dark
+        # fringe that BORDER_CONSTANT produces at bilinear boundaries.
+        warped_back = cv2.warpPerspective(
+            inpainted, H_from_rect, (frame_w, frame_h),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+        # Build a mask from the expanded quad, then erode by a few
+        # pixels to exclude any residual interpolation artifacts at the
+        # very edge of the warped region.
+        mask = np.zeros((frame_h, frame_w), dtype=np.uint8)
+        cv2.fillConvexPoly(mask, expanded.astype(np.int32), 255)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.erode(mask, kernel, iterations=1)
+
+        # Paste inpainted pixels where the mask is nonzero
+        mask_bool = mask > 0
+        frame[mask_bool] = warped_back[mask_bool]
+
+        return frame
+
     @staticmethod
     def _smooth_corner_trajectories(
         trajectories: dict[int, np.ndarray],
@@ -509,6 +612,32 @@ class RevertStage:
                     continue
 
                 warped_roi, warped_alpha, target_bbox = result
+
+                # Pre-composite inpainting: erase original text from the
+                # frame region under the ROI before compositing the edited
+                # ROI on top. Prevents Poisson blending artifacts from
+                # remnant original text leaking past the quad boundary.
+                if self.config.pre_inpaint and track.canonical_size is not None:
+                    H_eff = smoothed_H if smoothed_H is not None else (
+                        det.H_from_frontal @ delta_H
+                        if delta_H is not None else det.H_from_frontal
+                    )
+                    w_can, h_can = track.canonical_size
+                    can_corners = np.array(
+                        [[0, 0], [w_can, 0], [w_can, h_can], [0, h_can]],
+                        dtype=np.float64,
+                    )
+                    frame_quad = self._project_canonical_to_frame(
+                        H_eff, can_corners,
+                    )
+                    try:
+                        frame = self._pre_inpaint_region(frame, frame_quad)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug(
+                            "S5: pre-inpaint failed for track %d frame %d: %s",
+                            prop_roi.track_id, frame_idx, exc,
+                        )
+
                 if _REFINER_DIAGNOSTIC_BLUE:
                     frame = self.composite_roi_into_frame(
                         frame, warped_roi, warped_alpha, target_bbox

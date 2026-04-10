@@ -52,9 +52,25 @@ class FrontalizationStage:
         track.canonical_size = canonical_size
 
         for _frame_idx, det in track.detections.items():
+            grid = det.tracked_grid_points
+            if grid is not None and grid.shape[0] > 4:
+                # Multi-point homography fitting: use all tracked grid
+                # points (4 corners + N×N interior) for a least-squares /
+                # RANSAC fit. Generate matching destination grid points on
+                # the canonical rectangle using the same bilinear layout.
+                from src.stages.s1_detection.tracker import generate_quad_grid
+
+                grid_size = int(round((grid.shape[0] - 4) ** 0.5))
+                dst_grid = generate_quad_grid(dst_points, grid_size)
+                src_pts = grid
+                dst_pts = dst_grid
+            else:
+                src_pts = det.quad.points
+                dst_pts = dst_points
+
             H_to_frontal, H_from_frontal, is_valid = compute_homography(
-                src_points=det.quad.points,
-                dst_points=dst_points,
+                src_points=src_pts,
+                dst_points=dst_pts,
                 method=self.config.homography_method,
                 ransac_threshold=self.config.ransac_reproj_threshold,
             )

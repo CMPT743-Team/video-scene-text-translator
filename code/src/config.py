@@ -42,6 +42,11 @@ class DetectionConfig:
     cotracker_online_checkpoint: str = "../third_party/co-tracker/checkpoints/scaled_online.pth"
     cotracker_window_len: int = 60
     cotracker_online_window_len: int = 16
+    # Track a grid of interior points inside each quad in addition to the
+    # 4 corners. S2 uses all tracked points to fit a more robust homography
+    # via RANSAC (geometric averaging reduces per-point jitter).
+    # 0 = corners only (4 points). 3 = 3x3 interior grid + 4 corners = 13.
+    cotracker_grid_size: int = 0
     farneback_pyr_scale: float = 0.5
     farneback_levels: int = 3
     farneback_winsize: int = 15
@@ -52,6 +57,14 @@ class DetectionConfig:
     lk_max_level: int = 3
     # Optional word whitelist — if set, only keep detections whose words are all in this set
     word_whitelist: set[str] | None = None
+    # Post-gap-fill duplicate track suppression. For each track, test its
+    # bbox at its starting frame against all other tracks active at that
+    # frame. If any existing (earlier-starting) track covers more than
+    # `duplicate_track_coverage_threshold` of the new track's area, the
+    # new track is dropped as a duplicate / sub-region.
+    # Set to 0 to disable. 0.5 = drop if 50%+ of the new track's area
+    # is covered by an existing track.
+    duplicate_track_coverage_threshold: float = 0.5
     # S1 quad smoothing filters applied during gap-filling. These operate
     # on the raw optical-flow quads before S2 frontalization. Stacking
     # multiple filters introduces positional lag — disable if S5 temporal
@@ -159,6 +172,18 @@ class RevertConfig:
     use_refiner_gate: bool = True
     refiner_score_margin: float = 0.01
 
+    # Pre-composite background inpainting. Before compositing each
+    # edited ROI, warp the underlying frame region (expanded slightly
+    # beyond the detection quad) into a rectangle, run SRNet to erase
+    # any original text that might leak past the quad edges, then warp
+    # back. This prevents Poisson blending artifacts caused by remnant
+    # original text at the boundary when the tracking quad doesn't
+    # perfectly cover the source text.
+    pre_inpaint: bool = False
+    pre_inpaint_expansion: float = 0.15  # expand quad by this fraction from centroid
+    pre_inpaint_checkpoint: str = "../third_party/SRNet/checkpoints/trained_final_5M_.model"
+    pre_inpaint_device: str = "cuda"
+
     # Temporal smoothing of the final projected quad corners across
     # frames within each track. Applies a center-weighted (Gaussian)
     # moving average to the 4 corner trajectories in frame space,
@@ -205,6 +230,11 @@ class TextEditorConfig:
     # is below this fraction. Common translation cases with similar visual
     # width (DANGER→PELIGRO, STOP→ALTO) bypass the inpaint + shrink path.
     anytext2_mask_aspect_tolerance: float = 0.15
+    # Match the edited ROI's luminance histogram to the original unedited
+    # reference ROI immediately after text editing. Corrects AnyText2's
+    # tendency to produce overly-bright text by re-baselining the luminance
+    # distribution before S4's per-frame adaptation.
+    match_edited_histogram: bool = True
 
 
 @dataclass

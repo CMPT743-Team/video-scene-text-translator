@@ -119,9 +119,13 @@ class SRNetInpainter(BaseBackgroundInpainter):
         orig_h, orig_w = canonical_roi.shape[:2]
 
         # Resize to SRNet's expected input shape: H=64, W = round(W*64/H/8)*8.
+        # Minimum width must survive 3 stride-2 pool layers in the encoder
+        # (each halves spatial dims), so we need at least 4*8=32 pixels wide
+        # to avoid "kernel size > input size" errors on very narrow ROIs.
+        MIN_WIDTH = 32  # noqa: N806
         scale = self.INPUT_HEIGHT / orig_h
         to_h = self.INPUT_HEIGHT
-        to_w = max(self.WIDTH_STRIDE,
+        to_w = max(MIN_WIDTH,
                    int(round(orig_w * scale / self.WIDTH_STRIDE)) * self.WIDTH_STRIDE)
         resized = cv2.resize(canonical_roi, (to_w, to_h), interpolation=cv2.INTER_LINEAR)
 
