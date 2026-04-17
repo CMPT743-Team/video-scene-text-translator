@@ -74,7 +74,29 @@ class PropagationStage:
                 device=self.config.inpainter_device,
             )
             return self._inpainter
-        raise ValueError(f"Unknown inpainter_backend: {backend!r}")
+        if backend == "hisam":
+            from .segmentation_inpainter import SegmentationBasedInpainter
+            ckpt = self.config.inpainter_checkpoint_path
+            if not ckpt:
+                logger.warning(
+                    "S4: inpainter_backend=hisam but no checkpoint_path "
+                    "configured; LCM will be skipped"
+                )
+                return None
+            logger.info("S4: loading Hi-SAM inpainter from %s", ckpt)
+            self._inpainter = SegmentationBasedInpainter(
+                checkpoint_path=ckpt,
+                device=self.config.inpainter_device,
+                model_type=self.config.hisam_model_type,
+                mask_dilation_px=self.config.hisam_mask_dilation_px,
+                inpaint_method=self.config.hisam_inpaint_method,
+                use_patch_mode=self.config.hisam_use_patch_mode,
+            )
+            return self._inpainter
+        raise ValueError(
+            f"Unknown inpainter_backend: {backend!r}. "
+            f"Expected one of: 'srnet', 'hisam', 'none'."
+        )
 
     def _get_bpn(self):
         """Lazy-load the BPN predictor, or None if disabled."""
