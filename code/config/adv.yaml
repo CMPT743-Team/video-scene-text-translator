@@ -67,11 +67,11 @@ propagation:
   use_lcm: true
   # Background inpainter for LCM.
   # Backends: "srnet", "hisam", or "none".
-  inpainter_backend: "srnet"
-  # inpainter_backend: "hisam"   # swap in Hi-SAM stroke seg + cv2.inpaint
-  inpainter_checkpoint_path: "../third_party/SRNet/checkpoints/trained_final_5M_.model"
+  # inpainter_backend: "srnet"
+  inpainter_backend: "hisam"   # swap in Hi-SAM stroke seg + cv2.inpaint
+  # inpainter_checkpoint_path: "../third_party/SRNet/checkpoints/trained_final_5M_.model"
   # For hisam, point inpainter_checkpoint_path at a Hi-SAM head checkpoint, e.g.:
-  # inpainter_checkpoint_path: "../third_party/Hi-SAM/pretrained_checkpoint/sam_tss_l_textseg.pth"
+  inpainter_checkpoint_path: "../third_party/Hi-SAM/pretrained_checkpoint/sam_tss_l_textseg.pth"
   inpainter_device: "cuda"
   # Hi-SAM-specific (only used when inpainter_backend: "hisam")
   hisam_model_type: "vit_l"
@@ -109,16 +109,16 @@ revert:
   refiner_rejection_warn_threshold: 0.1
   temporal_smooth_window: 7
   temporal_smooth_sigma: 10
-  pre_inpaint: false
+  pre_inpaint: true
   pre_inpaint_expansion: 0.15   # 15% expansion from centroid
   # Pre-inpaint backend: "srnet" or "hisam". Independent from
   # propagation.inpainter_backend — S4 and S5 can use different backends
   # (e.g. SRNet in S4, Hi-SAM in S5) or different checkpoints.
-  pre_inpaint_backend: "srnet"
-  # pre_inpaint_backend: "hisam"   # swap in Hi-SAM stroke seg + cv2.inpaint
-  pre_inpaint_checkpoint: "../third_party/SRNet/checkpoints/trained_final_5M_.model"
+  # pre_inpaint_backend: "srnet"
+  pre_inpaint_backend: "hisam"   # swap in Hi-SAM stroke seg + cv2.inpaint
+  # pre_inpaint_checkpoint: "../third_party/SRNet/checkpoints/trained_final_5M_.model"
   # For hisam, point pre_inpaint_checkpoint at a Hi-SAM head checkpoint, e.g.:
-  # pre_inpaint_checkpoint: "../third_party/Hi-SAM/pretrained_checkpoint/sam_tss_l_textseg.pth"
+  pre_inpaint_checkpoint: "../third_party/Hi-SAM/pretrained_checkpoint/sam_tss_l_textseg.pth"
   pre_inpaint_device: "cuda"
   # Hi-SAM-specific (only used when pre_inpaint_backend: "hisam")
   pre_inpaint_hisam_model_type: "vit_l"
@@ -131,8 +131,8 @@ text_editor:
   model_path: null
   device: "cpu"
   # AnyText2 Gradio server (set to your server's URL, e.g. http://localhost:45843/)
-  #server_url: "http://109.231.106.68:45843/"
-  server_url: "http://localhost:6006/"
+  server_url: "http://109.231.106.68:45843/"
+  #server_url: "http://localhost:6006/"
   server_timeout: 120
   anytext2_ddim_steps: 20
   anytext2_cfg_scale: 7.5
