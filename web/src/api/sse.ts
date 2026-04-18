@@ -84,11 +84,13 @@ export function openEventStream(
   source.onerror = async (ev) => {
     // D16: on auto-reconnect, the browser will flip readyState to CONNECTING
     // before the socket comes back. Poll /status once so the UI doesn't
-    // drift during the gap.
+    // drift during the gap. On a successful re-sync, return without firing
+    // onError — the reconnect isn't an error from the consumer's viewpoint.
     if (source.readyState === EventSource.CONNECTING && options.onStatusSync) {
       try {
         const status = await getJobStatus(jobId);
         options.onStatusSync(status);
+        return;
       } catch (err) {
         options.onError?.(err);
         return;
