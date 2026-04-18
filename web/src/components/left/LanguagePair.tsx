@@ -9,7 +9,7 @@
  * validation (e.g. src !== tgt) in one place.
  */
 
-import { ArrowUpDown } from "lucide-react";
+import { ArrowLeftRight } from "lucide-react";
 
 import type { Language } from "@/api/schemas";
 import { LanguageSelect } from "../LanguageSelect";
@@ -49,7 +49,7 @@ export function LanguagePair({
 
   return (
     <div>
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-end gap-2.5">
         <div className="flex-1">
           <LanguageSelect
             label="Source language"
@@ -58,29 +58,25 @@ export function LanguagePair({
             languages={languages}
             disabled={disabled}
             locked={locked}
+            hideLabel
           />
         </div>
-        <div className="flex flex-col items-center justify-end pb-0.5">
-          {/* Spacer matches the <Label> line-height so the button lines up
-              vertically with the select's field, not its label. */}
-          <div className="h-[22px]" aria-hidden />
-          <button
-            type="button"
-            onClick={onSwap}
-            disabled={swapDisabled}
-            aria-label="Swap source and target languages"
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-md",
-              "bg-[color:var(--bg-1)] border border-[color:var(--line-2)]",
-              "text-[color:var(--ink-1)] transition-colors",
-              "hover:text-[color:var(--acc)] hover:border-[color:var(--acc-line)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--acc-line)]",
-              "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[color:var(--ink-1)] disabled:hover:border-[color:var(--line-2)]",
-            )}
-          >
-            <ArrowUpDown className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onSwap}
+          disabled={swapDisabled}
+          aria-label="Swap source and target languages"
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
+            "bg-[color:var(--bg-1)] border border-[color:var(--line-2)]",
+            "text-[color:var(--ink-1)] transition-colors",
+            "hover:text-[color:var(--acc)] hover:border-[color:var(--acc-line)]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--acc-line)]",
+            "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[color:var(--ink-1)] disabled:hover:border-[color:var(--line-2)]",
+          )}
+        >
+          <ArrowLeftRight className="h-4 w-4" aria-hidden />
+        </button>
         <div className="flex-1">
           <LanguageSelect
             label="Target language"
@@ -89,6 +85,7 @@ export function LanguagePair({
             languages={languages}
             disabled={disabled}
             locked={locked}
+            hideLabel
           />
         </div>
       </div>
