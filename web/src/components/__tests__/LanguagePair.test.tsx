@@ -35,10 +35,10 @@ describe("<LanguagePair>", () => {
 
     // Two native <select>s, one per label.
     expect(
-      screen.getByRole("combobox", { name: /source language/i }),
+      screen.getByRole("combobox", { name: /^source$/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: /target language/i }),
+      screen.getByRole("combobox", { name: /^target$/i }),
     ).toBeInTheDocument();
 
     // Swap button is exposed with a descriptive aria-label, not just an icon.
@@ -63,11 +63,11 @@ describe("<LanguagePair>", () => {
     const { props } = renderPair();
 
     fireEvent.change(
-      screen.getByRole("combobox", { name: /source language/i }),
+      screen.getByRole("combobox", { name: /^source$/i }),
       { target: { value: "fr" } },
     );
     fireEvent.change(
-      screen.getByRole("combobox", { name: /target language/i }),
+      screen.getByRole("combobox", { name: /^target$/i }),
       { target: { value: "fr" } },
     );
 
@@ -91,10 +91,10 @@ describe("<LanguagePair>", () => {
     renderPair({ locked: true });
 
     const source = screen.getByRole("combobox", {
-      name: /source language/i,
+      name: /^source$/i,
     });
     const target = screen.getByRole("combobox", {
-      name: /target language/i,
+      name: /^target$/i,
     });
 
     expect(source).toBeDisabled();

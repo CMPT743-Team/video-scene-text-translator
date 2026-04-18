@@ -19,7 +19,6 @@ import { useId } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 
 import type { Language } from "@/api/schemas";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 export interface LanguageSelectProps {
@@ -57,9 +56,16 @@ export function LanguageSelect({
 
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className={hideLabel ? "sr-only" : undefined}>
+      <label
+        htmlFor={id}
+        className={
+          hideLabel
+            ? "sr-only"
+            : "block font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+        }
+      >
         {label}
-      </Label>
+      </label>
       <div className="relative">
         <select
           id={id}
@@ -70,7 +76,7 @@ export function LanguageSelect({
           className={cn(
             // Base field look — matches `.lang-select` in mockup.css.
             "w-full h-10 appearance-none truncate rounded-md px-3 text-sm",
-            "bg-[color:var(--bg-3)] text-[color:var(--ink-0)]",
+            "bg-[color:var(--bg-1)] text-[color:var(--ink-0)]",
             "border border-[color:var(--line-2)]",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--acc-line)]",
             "transition-colors hover:border-[color:var(--bg-4)]",
