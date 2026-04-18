@@ -47,8 +47,21 @@ echo "==> Building web/dist"
 npm run build
 
 echo "==> Replacing ${STATIC_DIR}"
-rm -rf "${STATIC_DIR}"
-cp -r "${WEB_DIR}/dist" "${STATIC_DIR}"
+# Atomic swap: stage the new bundle next to the live one, then `mv` over it.
+# `mv` across paths on the same filesystem is a rename(2), which is atomic
+# from any concurrent reader's perspective — so a uvicorn serving requests
+# during the rebuild never sees the in-between "no static dir" state that
+# `rm -rf && cp -r` would expose.
+STAGING_DIR="${STATIC_DIR}.new"
+OLD_DIR="${STATIC_DIR}.old"
+rm -rf "${STAGING_DIR}" "${OLD_DIR}"
+cp -r "${WEB_DIR}/dist" "${STAGING_DIR}"
+# Two-step rename so we can roll back cleanly if the new dir is malformed.
+if [[ -d "${STATIC_DIR}" ]]; then
+  mv "${STATIC_DIR}" "${OLD_DIR}"
+fi
+mv "${STAGING_DIR}" "${STATIC_DIR}"
+rm -rf "${OLD_DIR}"
 
 echo "==> Done. Static bundle at: ${STATIC_DIR}"
 ls -la "${STATIC_DIR}" | head -20
