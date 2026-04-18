@@ -194,18 +194,24 @@ The five file-slot / submit-slot variants (idle, uploading, rejoin, running/succ
   - `prefers-reduced-motion` block placed outside `@layer base` (plain CSS) so `!important` beats Tailwind animation utilities.
   - R3 still open — no display on dev box; four shadcn primitive variants (Button / Alert / Card / Badge) type-check + test-green but need human visual sign-off next session, especially `destructive-foreground` contrast on `--err` and `ring` visibility at 35% opacity.
   - `npm run type-check` / `npm run lint` / `npm run test` (60/60) all green.
-- [ ] **Step 2 — `createJob` on XHR with `onProgress`.** Rewrite to XMLHttpRequest; add `UploadProgress` type to `schemas.ts`; add `AbortSignal` support. Tests with a mock XHR. No consumer wiring yet.
-- [ ] **Step 3 — `useJobStream` active-stage tick.** Add `activeStageElapsedMs` driven by `setInterval(1000)`. Update existing tests with fake timers. No consumer UI change.
-- [ ] **Step 4 — `<AppShell>` + `<DesktopRequired>`.** Build the fixed 1080×760 two-column frame with slot props for left + right. Viewport breakpoint card. Tests: it renders slot children; it shows the desktop-required card below 1080.
-- [ ] **Step 5 — Dropzone + `<VideoCard>`.** Reskin Dropzone; add VideoCard with blob URL + cleanup. Component tests: file select, oversize warn, video cleanup on unmount (R4).
-- [ ] **Step 6 — `<LanguageSelect>` + `<LanguagePair>` (with swap).** Hand-rolled flat select; pair composite with swap button + mono footer. Tests: controlled behavior, swap, locked mode.
+- [x] **Step 2 — `createJob` on XHR with `onProgress`.** Rewrite to XMLHttpRequest; add `UploadProgress` type to `schemas.ts`; add `AbortSignal` support. Tests with a mock XHR. No consumer wiring yet.
+  - Shared `unwrapFastapiDetail()` helper now used by both fetch and XHR paths; old fetch-based createJob tests removed (redundant with XHR ones). 15 api-client tests total (+7 net).
+- [x] **Step 3 — `useJobStream` active-stage tick.** Add `activeStageElapsedMs` driven by `setInterval(1000)`. Update existing tests with fake timers. No consumer UI change.
+  - Integer-second resolution + setState short-circuit on unchanged floored value. `Date.now()` baseline (not `ev.ts`) to defend against clock skew. Status-sync fallback seed only when no ticker live.
+- [x] **Step 4 — `<AppShell>` + `<DesktopRequired>`.** Build the fixed 1080×760 two-column frame with slot props for left + right. Viewport breakpoint card. Tests: it renders slot children; it shows the desktop-required card below 1080.
+  - Real `<h2>` rather than shadcn's `<CardTitle>` (which renders a div) so `getByRole("heading")` + assistive tech land correctly. Inline `style={{width, height}}` over `w-[1080px]` to avoid JIT one-off utility.
+- [x] **Step 5 — Dropzone + `<VideoCard>`.** Reskin Dropzone; add VideoCard with blob URL + cleanup. Component tests: file select, oversize warn, video cleanup on unmount (R4).
+  - Dropzone kept its filename box (Path A) for UploadForm back-compat — VideoCard replaces it in Step 7/14. `aspect-video` (16/9) chosen over mockup's 9/16 since landscape is the likelier real-world input — flag if portrait matters.
+- [x] **Step 6 — `<LanguageSelect>` + `<LanguagePair>` (with swap).** Hand-rolled flat select; pair composite with swap button + mono footer. Tests: controlled behavior, swap, locked mode.
+  - Native `<select>` over Radix — a11y for free, immune to jsdom quirks, smaller DOM. `locked` implies `disabled` (single visual state, no dual-prop ambiguity). Removed stale Radix pointerCapture shims.
 - [ ] **Step 7 — `<SubmitBar>` + `<IdentityBlock>` + `<LeftColumn>`.** Five submit variants; left-column composite. Tests: variant labels + disabled states.
 - [ ] **Step 8 — Right-column idle + upload surfaces.** `<IdlePlaceholder>`, `<UploadProgress>`, `<StatusBand>`. Tests: renders copy; UploadProgress math (degrades when MB/s unknown — R2).
 - [ ] **Step 9 — `<StageProgress>` rewrite.** 5 tiles + elapsed row + stripe meter (reduced-motion safe — R9). Tests: state classes per tile; active-tile tick readout.
 - [ ] **Step 10 — `<LogPanel>` rewrite.** Mono list, severity chip, bold stage separators (regex — R7), static S3 hint, plain auto-scroll. Tests: separator regex, severity rendering, auto-scroll behavior.
 - [ ] **Step 11 — `<ResultPanel>` rewrite.** Output video + corner tag + success-styled download. Tests: renders output URL, download link.
 - [ ] **Step 12 — `<FailureCard>` + delete `<ErrorAlert>`.** Copy-error via clipboard; collapsible traceback. Tests: renders message + traceback; copy click writes to clipboard.
-- [ ] **Step 13 — `<RejoinCard>` + 409 `/status` fetch.** Fetch `getJobStatus(activeJobId)` on 409; render id + current stage + started-at; Rejoin CTA. Tests: renders with + without blocking-status fetch; Rejoin click invokes callback.
+- [x] **Step 13 — `<RejoinCard>` + 409 `/status` fetch.** Fetch `getJobStatus(activeJobId)` on 409; render id + current stage + started-at; Rejoin CTA. Tests: renders with + without blocking-status fetch; Rejoin click invokes callback.
+  - Card is purely presentational — the 409 fetch lives in `<App>` (Step 14). STAGE_LABEL map inline for now; extract if Step 9's StageProgress needs the same lookup.
 - [ ] **Step 14 — App state machine + delete UploadForm/JobView.** Collapse into `<App>` reducer owning `UiState`; wire XHR submit, 409 handling, terminal transitions. ⌘↵ keybind. Delete `UploadForm.tsx` and `JobView.tsx`. App-level integration tests for phase transitions.
 - [ ] **Step 15 — Cosmetic polish pass.** Mono footers ("● LOCKED WHILE RUNNING" etc.), active-tile accent, hint-row delete-link styling (R10), prefers-reduced-motion coverage. One round of visual diff against screenshots.
 - [ ] **Step 16 — Dev-box smoke.** Real upload + real pipeline + real download against the backend. Verify against all six state screenshots. Log any drift in a follow-up.
