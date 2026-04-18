@@ -22,6 +22,7 @@ import logging
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 from src.config import PipelineConfig
 from src.data_types import PropagatedROI, TextTrack
@@ -191,6 +192,22 @@ class PropagationStage:
         inpainter = self._get_inpainter() if self.config.use_lcm else None
         bpn = self._get_bpn() if self.config.use_bpn else None
 
+        # Progress bar sized to total inpaint-eligible detections across
+        # all tracks. Disabled when no inpainter is active (nothing slow
+        # to watch). Counts the per-detection inner loop only — the
+        # reference-frame inpaint (~1 extra per track) is cheap enough
+        # to ignore.
+        total_dets = sum(
+            len(t.detections) for t in tracks if t.edited_roi is not None
+        )
+        pbar = tqdm(
+            total=total_dets,
+            desc="S4 inpaint",
+            unit="det",
+            leave=False,
+            disable=inpainter is None,
+        )
+
         for track in tracks:
             if track.edited_roi is None:
                 logger.warning(
@@ -219,6 +236,7 @@ class PropagationStage:
             per_det_outputs: list[tuple[int, object, np.ndarray, np.ndarray]] = []
 
             for frame_idx, det in track.detections.items():
+                pbar.update(1)
                 frame = frames.get(frame_idx)
                 if frame is None:
                     continue
@@ -293,4 +311,5 @@ class PropagationStage:
                 )
                 propagated.setdefault(frame_idx, []).append(prop_roi)
 
+        pbar.close()
         return propagated

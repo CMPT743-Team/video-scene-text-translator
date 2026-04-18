@@ -13,6 +13,7 @@ import logging
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 from src.config import PipelineConfig
 from src.data_types import BBox, PropagatedROI, TextTrack
@@ -592,11 +593,24 @@ class RevertStage:
             )
 
         # ----- Pass 2: composite -----
+        # Progress bar sized to total propagated ROIs (one inpaint call
+        # per ROI when pre_inpaint is on). Disabled otherwise, since the
+        # rest of the composite path is fast enough not to need a bar.
+        total_rois = sum(len(rois) for rois in propagated_rois.values())
+        pbar = tqdm(
+            total=total_rois,
+            desc="S5 pre-inpaint",
+            unit="roi",
+            leave=False,
+            disable=not self.config.pre_inpaint,
+        )
+
         output_frames = []
         for frame_idx in sorted_idxs:
             frame = frames[frame_idx].copy()
 
             for prop_roi in propagated_rois.get(frame_idx, []):
+                pbar.update(1)
                 track = tracks_by_id.get(prop_roi.track_id)
                 if track is None:
                     continue
@@ -693,4 +707,5 @@ class RevertStage:
             else:
                 logger.debug(msg, *args)
 
+        pbar.close()
         return output_frames
