@@ -34,6 +34,13 @@ export interface LanguageSelectProps {
    * `disabled`). When `locked` is true the `disabled` prop is ignored.
    */
   locked?: boolean;
+  /**
+   * When true, the visible `<Label>` is hidden (sr-only). The `label` prop is
+   * still used as the select's `aria-label`. Used by <LanguagePair>, which
+   * carries a single "LANGUAGES" section eyebrow above the pair instead of
+   * per-select labels (matches the mockup).
+   */
+  hideLabel?: boolean;
 }
 
 export function LanguageSelect({
@@ -43,13 +50,16 @@ export function LanguageSelect({
   languages,
   disabled = false,
   locked = false,
+  hideLabel = false,
 }: LanguageSelectProps) {
   const id = useId();
   const isDisabled = locked || disabled;
 
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className={hideLabel ? "sr-only" : undefined}>
+        {label}
+      </Label>
       <div className="relative">
         <select
           id={id}
@@ -60,7 +70,7 @@ export function LanguageSelect({
           className={cn(
             // Base field look — matches `.lang-select` in mockup.css.
             "w-full h-10 appearance-none truncate rounded-md px-3 text-sm",
-            "bg-[color:var(--bg-1)] text-[color:var(--ink-0)]",
+            "bg-[color:var(--bg-3)] text-[color:var(--ink-0)]",
             "border border-[color:var(--line-2)]",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--acc-line)]",
             "transition-colors hover:border-[color:var(--bg-4)]",

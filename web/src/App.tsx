@@ -516,6 +516,31 @@ export default function App(): JSX.Element {
 
 type NonActiveState = Exclude<UiState, { phase: "active" }>;
 
+type EyebrowPillKind = "neutral" | "warn";
+
+function SectionEyebrow({
+  label,
+  pill,
+}: {
+  label: string;
+  pill?: { text: string; kind: EyebrowPillKind };
+}): JSX.Element {
+  const pillClass =
+    pill?.kind === "warn"
+      ? "border border-[color:var(--warn-line)] bg-[color:var(--warn-soft)] text-[color:var(--warn)]"
+      : "border border-border bg-[color:var(--bg-3)] text-muted-foreground";
+  return (
+    <div className="mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <span>{label}</span>
+      {pill && (
+        <span className={`rounded px-1.5 py-0.5 ${pillClass}`}>
+          {pill.text}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function renderFileSlotForNonActive(
   state: NonActiveState,
   onPickFile: (f: File | null) => void,
@@ -523,22 +548,42 @@ function renderFileSlotForNonActive(
   switch (state.phase) {
     case "idle":
       return (
-        <Dropzone
-          currentFile={state.file}
-          onFileSelected={onPickFile}
-          maxSizeBytes={MAX_UPLOAD_BYTES}
-        />
+        <section>
+          <SectionEyebrow
+            label="Input"
+            pill={{ text: "Empty", kind: "neutral" }}
+          />
+          <Dropzone
+            currentFile={state.file}
+            onFileSelected={onPickFile}
+            maxSizeBytes={MAX_UPLOAD_BYTES}
+          />
+        </section>
       );
     case "uploading":
       return (
-        <VideoCard
-          file={state.file}
-          variant="input"
-          sourceLang={state.source}
-        />
+        <section>
+          <SectionEyebrow
+            label="Input"
+            pill={{ text: "Busy", kind: "warn" }}
+          />
+          <VideoCard
+            file={state.file}
+            variant="input"
+            sourceLang={state.source}
+          />
+        </section>
       );
     case "rejoin":
-      return <VideoCard file={state.file} variant="queued" />;
+      return (
+        <section>
+          <SectionEyebrow
+            label="Input"
+            pill={{ text: "Blocked", kind: "warn" }}
+          />
+          <VideoCard file={state.file} variant="queued" />
+        </section>
+      );
   }
 }
 
@@ -549,48 +594,51 @@ function renderLanguagePairSlotForNonActive(
 ): JSX.Element {
   switch (state.phase) {
     case "idle": {
-      const sameLang =
-        state.source === state.target && state.source !== "";
-      const footer = sameLang
-        ? "SOURCE AND TARGET MUST DIFFER"
-        : "SOURCE \u2260 TARGET";
       return (
-        <LanguagePair
-          source={state.source}
-          target={state.target}
-          languages={languages}
-          onSourceChange={(code) => dispatch({ type: "setSource", code })}
-          onTargetChange={(code) => dispatch({ type: "setTarget", code })}
-          onSwap={() => dispatch({ type: "swap" })}
-          footer={footer}
-        />
+        <section>
+          <SectionEyebrow label="Languages" />
+          <LanguagePair
+            source={state.source}
+            target={state.target}
+            languages={languages}
+            onSourceChange={(code) => dispatch({ type: "setSource", code })}
+            onTargetChange={(code) => dispatch({ type: "setTarget", code })}
+            onSwap={() => dispatch({ type: "swap" })}
+          />
+        </section>
       );
     }
     case "uploading":
       return (
-        <LanguagePair
-          source={state.source}
-          target={state.target}
-          languages={languages}
-          onSourceChange={() => {}}
-          onTargetChange={() => {}}
-          onSwap={() => {}}
-          disabled
-          footer={"\u25CF LOCKED WHILE UPLOADING"}
-        />
+        <section>
+          <SectionEyebrow label="Languages" />
+          <LanguagePair
+            source={state.source}
+            target={state.target}
+            languages={languages}
+            onSourceChange={() => {}}
+            onTargetChange={() => {}}
+            onSwap={() => {}}
+            disabled
+            footer={"\u25CF LOCKED WHILE UPLOADING"}
+          />
+        </section>
       );
     case "rejoin":
       return (
-        <LanguagePair
-          source={state.source}
-          target={state.target}
-          languages={languages}
-          onSourceChange={() => {}}
-          onTargetChange={() => {}}
-          onSwap={() => {}}
-          locked
-          footer={"\u25CF HOLD WHILE JOB FINISHES"}
-        />
+        <section>
+          <SectionEyebrow label="Languages" />
+          <LanguagePair
+            source={state.source}
+            target={state.target}
+            languages={languages}
+            onSourceChange={() => {}}
+            onTargetChange={() => {}}
+            onSwap={() => {}}
+            locked
+            footer={"\u25CF HOLD WHILE JOB FINISHES"}
+          />
+        </section>
       );
   }
 }
@@ -793,34 +841,49 @@ function ActiveView({
 }
 
 function renderActiveFileSlot(state: ActiveState): JSX.Element {
-  if (state.file !== null) {
-    return <VideoCard file={state.file} variant="queued" />;
-  }
-  return <RemoteJobPlaceholder />;
+  return (
+    <section>
+      <SectionEyebrow
+        label="Input"
+        pill={{ text: "Locked", kind: "neutral" }}
+      />
+      {state.file !== null ? (
+        <VideoCard
+          file={state.file}
+          variant="input"
+          sourceLang={state.source}
+        />
+      ) : (
+        <RemoteJobPlaceholder />
+      )}
+    </section>
+  );
 }
 
 function renderActiveLanguagePairSlot(
   state: ActiveState,
   languages: Language[],
 ): JSX.Element {
-  if (state.file === null) {
-    return (
-      <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-        Source and target determined by the remote job.
-      </p>
-    );
-  }
   return (
-    <LanguagePair
-      source={state.source}
-      target={state.target}
-      languages={languages}
-      onSourceChange={() => {}}
-      onTargetChange={() => {}}
-      onSwap={() => {}}
-      locked
-      footer={"\u25CF LOCKED WHILE RUNNING"}
-    />
+    <section>
+      <SectionEyebrow label="Languages" />
+      {state.file === null ? (
+        <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+          Source and target determined by the remote job.
+        </p>
+      ) : (
+        <LanguagePair
+          source={state.source}
+          target={state.target}
+          languages={languages}
+          onSourceChange={() => {}}
+          onTargetChange={() => {}}
+          onSwap={() => {}}
+          locked
+          footer={"\u25CF LOCKED WHILE RUNNING"}
+        />
+      )}
+    </section>
   );
 }
 
