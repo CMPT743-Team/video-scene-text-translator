@@ -105,3 +105,18 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@layer components {
+  /* Diagonal-stripe fill used by the <StageProgress> elapsed meter. Pairs
+     with Tailwind's `animate-stripe-flow` to produce a Linear-ish "something
+     is happening" signal. Decorative only. */
+  .stripe-fill {
+    background-image: repeating-linear-gradient(
+      45deg,
+      var(--acc) 0 6px,
+      transparent 6px 14px
+    );
+    background-size: 20px 20px;
+    opacity: 0.5;
+  }
+}
