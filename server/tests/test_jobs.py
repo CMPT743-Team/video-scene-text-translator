@@ -295,8 +295,9 @@ async def test_submit_with_explicit_job_id_raises_if_duplicate(tmp_path: Path):
             source_lang="en", target_lang="es",
             input_path=inp, output_path=outp,
         )
+        # Per D16 invariant: once the drain yields the terminal event,
+        # record.status is already flipped (no _wait_status needed).
         await _drain_until_terminal(mgr, explicit_id)
-        await _wait_status(mgr, explicit_id, terminal={"succeeded"})
 
         # Assert — re-submitting with the same id raises
         inp2, outp2 = _default_paths(tmp_path, 99)
@@ -370,8 +371,8 @@ async def test_submit_after_prior_completes_succeeds(tmp_path: Path):
             source_lang="en", target_lang="es",
             input_path=inp_a, output_path=out_a,
         )
+        # D16 invariant: drain yielding Done means status is already terminal.
         await _drain_until_terminal(mgr, job_a)
-        await _wait_status(mgr, job_a, terminal={"succeeded"})
 
         # Then submit B
         job_b = await mgr.submit(
@@ -627,8 +628,8 @@ async def test_delete_succeeded_job_removes_from_registry(tmp_path: Path):
             source_lang="en", target_lang="es",
             input_path=inp, output_path=outp,
         )
+        # D16: terminal status guaranteed once drain yields Done.
         await _drain_until_terminal(mgr, job_id)
-        await _wait_status(mgr, job_id, terminal={"succeeded"})
 
         # Act
         await mgr.delete(job_id)
@@ -669,8 +670,10 @@ async def test_get_active_job_id_tracks_lifecycle(tmp_path: Path):
 
         # Let the job finish → None again
         release.set()
+        # drain_task returning implies the terminal event has been yielded,
+        # and D16 guarantees status is already flipped by then — so
+        # get_active_job_id() must read None without any polling.
         await drain_task
-        await _wait_status(mgr, job_id, terminal={"succeeded"})
         assert await mgr.get_active_job_id() is None
     finally:
         release.set()
