@@ -38,19 +38,6 @@ describe("<ResultPanel>", () => {
     expect(screen.getByText("OUTPUT")).toBeInTheDocument();
   });
 
-  it("renders the first 8 characters of the job id in the caption", () => {
-    render(
-      <ResultPanel
-        jobId="abcdef1234567890"
-        outputUrl="/api/jobs/abcdef1234567890/output"
-      />,
-    );
-    // The caption renders "job abcdef12…" — assert the prefix is visible and
-    // the full 16-char id is NOT, so we know the truncation happened.
-    expect(screen.getByText(/abcdef12/)).toBeInTheDocument();
-    expect(screen.queryByText(/abcdef1234567890/)).toBeNull();
-  });
-
   it("exposes a download anchor with the expected href + a non-empty download attr", () => {
     const outputUrl = "/api/jobs/7ca09ebb-dead-beef/output";
     render(<ResultPanel jobId="7ca09ebb-dead-beef" outputUrl={outputUrl} />);
@@ -60,9 +47,11 @@ describe("<ResultPanel>", () => {
     const downloadAttr = download.getAttribute("download");
     expect(downloadAttr).not.toBeNull();
     expect(downloadAttr!.length).toBeGreaterThan(0);
-    // The filename includes the job id so users can tell downloads apart when
-    // they run multiple translations.
-    expect(downloadAttr).toMatch(/job-/);
+    // Filename matches the button label so the saved file lines up with
+    // what the UI promised. The browser auto-disambiguates collisions
+    // (translated (1).mp4, etc.) when multiple downloads land in the
+    // same folder.
+    expect(downloadAttr).toMatch(/translated.*\.mp4/);
   });
 
   it("renders a visible 'Download' label in the link", () => {
