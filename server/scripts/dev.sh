@@ -10,17 +10,24 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 REPO_ROOT="$( cd "${SCRIPT_DIR}/../.." && pwd )"
 
-# Activate conda env if available
+# Activate conda env if nothing is active; otherwise verify the active env
+# is `vc_final`. A wrong env silently boots uvicorn against a Python that
+# doesn't have FastAPI / torch / etc., producing cryptic import errors.
+REQUIRED_ENV="vc_final"
 if [[ -z "${CONDA_DEFAULT_ENV:-}" ]]; then
   if [[ -f /opt/miniforge3/bin/conda ]]; then
     # shellcheck disable=SC1091
     eval "$(/opt/miniforge3/bin/conda shell.bash hook)"
-    conda activate vc_final
+    conda activate "${REQUIRED_ENV}"
   elif [[ -f /opt/miniconda3/bin/conda ]]; then
     # shellcheck disable=SC1091
     eval "$(/opt/miniconda3/bin/conda shell.bash hook)"
-    conda activate vc_final
+    conda activate "${REQUIRED_ENV}"
   fi
+elif [[ "${CONDA_DEFAULT_ENV}" != "${REQUIRED_ENV}" ]]; then
+  echo "WARNING: CONDA_DEFAULT_ENV is '${CONDA_DEFAULT_ENV}', expected '${REQUIRED_ENV}'" >&2
+  echo "         uvicorn may fail with ModuleNotFoundError if this env lacks FastAPI." >&2
+  echo "         Deactivate and re-run, or: conda activate ${REQUIRED_ENV}" >&2
 fi
 
 # Activate nvm if available (Node)
