@@ -95,7 +95,7 @@ export function LogPanel({ logs, currentStage, isRunning }: LogPanelProps) {
 
   return (
     <div className="flex h-full min-h-[12rem] flex-1 flex-col overflow-hidden rounded-md border border-border bg-[color:var(--bg-1)]">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2 font-mono text-[11px] tracking-wider text-muted-foreground uppercase">
+      <div className="flex items-center justify-between border-b border-border bg-[color:var(--bg-2)] px-3 py-2 font-mono text-[11px] tracking-wider text-muted-foreground uppercase">
         <span>LIVE LOG</span>
         <span className="rounded bg-[color:var(--bg-3)] px-2 py-0.5">
           {logs.length} lines
