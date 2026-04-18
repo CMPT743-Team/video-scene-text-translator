@@ -20,8 +20,9 @@ export function DesktopRequired(): JSX.Element {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Scene Text Translator needs at least 1080 px of width. Please open
-            this page in a wider browser window.
+            Scene Text Translator needs at least 960 × 620 px of window space.
+            Please open this page in a wider browser window (or close side
+            panels / dev tools).
           </p>
         </CardContent>
       </Card>

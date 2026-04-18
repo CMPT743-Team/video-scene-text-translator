@@ -17,7 +17,7 @@ describe("<DesktopRequired>", () => {
     expect(
       screen.getByRole("heading", { name: /desktop required/i }),
     ).toBeInTheDocument();
-    // Body copy mentions the 1080 px minimum so users know what to do.
-    expect(screen.getByText(/1080\s*px/i)).toBeInTheDocument();
+    // Body copy mentions the 960 x 620 minimum so users know what to do.
+    expect(screen.getByText(/960/)).toBeInTheDocument();
   });
 });
