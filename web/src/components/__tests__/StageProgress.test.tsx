@@ -132,7 +132,7 @@ describe("<StageProgress>", () => {
     expect(items[4]).toHaveAttribute("data-state", "pending");
   });
 
-  it("renders the elapsed row with S#/5 and MM:SS while running", () => {
+  it("renders 'elapsed MM:SS' in the elapsed row while running", () => {
     render(
       <StageProgress
         stages={{ ...ALL_PENDING, s1: "done", s2: "done", s3: "active" }}
@@ -142,11 +142,11 @@ describe("<StageProgress>", () => {
       />,
     );
 
-    // "S3/5 · 00:05" — uses middle-dot separator (U+00B7).
-    expect(screen.getByText(/S3\/5\s*\u00B7\s*00:05/)).toBeInTheDocument();
+    // Total elapsed = 4.2 + 6.1 + 5.0 = 15.3s → "elapsed 00:15".
+    expect(screen.getByText(/elapsed 00:15/)).toBeInTheDocument();
   });
 
-  it("renders the elapsed row with 5/5 and the summed total when all stages are done", () => {
+  it("renders 'total MM:SS' when all stages are done", () => {
     render(
       <StageProgress
         stages={ALL_DONE}
@@ -154,7 +154,8 @@ describe("<StageProgress>", () => {
       />,
     );
 
-    // 2+3+4+2+1.5 = 12.5s → "5/5 · 00:12".
-    expect(screen.getByText(/5\/5\s*\u00B7\s*00:12/)).toBeInTheDocument();
+    // 2+3+4+2+1.5 = 12.5s → "total 00:12". The "5 stages done" summary
+    // lives in the StatusBand progress chip, not here.
+    expect(screen.getByText(/total 00:12/)).toBeInTheDocument();
   });
 });

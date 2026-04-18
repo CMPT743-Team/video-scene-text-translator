@@ -101,9 +101,13 @@ export function StageProgress({
   currentStage,
   failedStage,
 }: StageProgressProps) {
-  // Elapsed-row readout: running → "S3/5 · MM:SS"; all-done → "5/5 · MM:SS";
-  // failed → "elapsed MM:SS · crashed at Stage N of 5" (mockup 05-failed);
-  // else → em-dash.
+  // Elapsed-row readout: matches the mockup per phase.
+  //   running   → "elapsed MM:SS"                                 (03-running)
+  //   all-done  → "total MM:SS"                                   (04-succeeded)
+  //   failed    → "elapsed MM:SS · crashed at Stage N of 5"       (05-failed)
+  //   else      → em-dash placeholder
+  // The per-stage S#/5 breakdown used to live here; it moved to the
+  // StatusBand progress chip instead (App.tsx wires it).
   const allDone = STAGES.every((stage) => stages[stage] === "done");
   let elapsedReadout: string;
   if (failedStage) {
@@ -114,13 +118,18 @@ export function StageProgress({
     const failedAt = stageIndex(failedStage) + 1; // 1-indexed for display
     elapsedReadout = `elapsed ${formatClock(elapsedMs)} \u00B7 crashed at Stage ${failedAt} of 5`;
   } else if (currentStage && activeStageElapsedMs !== undefined) {
-    elapsedReadout = `${stageCode(currentStage)}/5 \u00B7 ${formatClock(activeStageElapsedMs)}`;
+    // Total elapsed = completed-stage durations + live tick on the active one.
+    const prior = STAGES.filter((s) => stages[s] === "done").reduce(
+      (acc, s) => acc + (stageDurations[s] ?? 0),
+      0,
+    );
+    elapsedReadout = `elapsed ${formatClock(prior + activeStageElapsedMs)}`;
   } else if (allDone) {
     const total = STAGES.reduce(
       (acc, stage) => acc + (stageDurations[stage] ?? 0),
       0,
     );
-    elapsedReadout = `5/5 \u00B7 ${formatClock(total)}`;
+    elapsedReadout = `total ${formatClock(total)}`;
   } else {
     elapsedReadout = "\u2014"; // em-dash placeholder
   }

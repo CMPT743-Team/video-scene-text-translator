@@ -29,6 +29,13 @@ interface StatusBandProps {
    * lands here instead.
    */
   jobId?: string;
+  /**
+   * Short phase-specific status line rendered after the jobId chip.
+   * e.g. "S3/5 · 00:42" while running, "done · 2:08" on success,
+   * "failed · S3" on error. Optional — omit for phases that have no
+   * meaningful subtitle (idle, uploading, connecting).
+   */
+  progress?: string;
 }
 
 type PillSpec = {
@@ -87,14 +94,18 @@ const EYEBROW: Record<StatusBandKind, string> = {
   blocked: "ACTION REQUIRED",
 };
 
-export function StatusBand({ kind, jobId }: StatusBandProps): JSX.Element {
+export function StatusBand({
+  kind,
+  jobId,
+  progress,
+}: StatusBandProps): JSX.Element {
   const pill = PILLS[kind];
   const eyebrow = EYEBROW[kind];
 
   return (
     <div className="flex items-center justify-between border-b border-border px-5 py-3 font-mono text-[11px] uppercase tracking-wider">
       <span className="text-muted-foreground">{eyebrow}</span>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {jobId && (
           <span
             data-testid="status-band-job-id"
@@ -104,6 +115,27 @@ export function StatusBand({ kind, jobId }: StatusBandProps): JSX.Element {
               &#x25CF;
             </span>
             <span className="normal-case">{jobId.slice(0, 8)}</span>
+          </span>
+        )}
+        {jobId && progress && (
+          // Small middle-dot separator between the two chrome chips.
+          <span aria-hidden className="text-[color:var(--ink-3)]">
+            &#x00B7;
+          </span>
+        )}
+        {progress && (
+          <span
+            data-testid="status-band-progress"
+            className="text-[color:var(--ink-2)] normal-case"
+          >
+            {progress}
+          </span>
+        )}
+        {(jobId || progress) && (
+          // Divider before the pill so the three chrome parts read as a
+          // single right-aligned chrome strip.
+          <span aria-hidden className="text-[color:var(--ink-3)]">
+            &#x00B7;
           </span>
         )}
         <span

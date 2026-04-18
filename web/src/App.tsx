@@ -71,6 +71,7 @@ import { FailureCard } from "@/components/right/FailureCard";
 import { IdlePlaceholder } from "@/components/right/IdlePlaceholder";
 import { RejoinCard } from "@/components/right/RejoinCard";
 import { StatusBand, type StatusBandKind } from "@/components/right/StatusBand";
+import { STAGES } from "@/lib/stages";
 import { UploadProgress } from "@/components/right/UploadProgress";
 
 import {
@@ -710,7 +711,8 @@ function NonActiveRightColumn({
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
         {state.phase === "idle" && (
           <>
-            <IdlePlaceholder />
+            {/* Errors pinned to the top so they don't get lost below the
+                vertically-centered IdlePlaceholder. */}
             {state.submitError && (
               <Alert variant="destructive">
                 <AlertTitle>{errorTitle(state.submitError)}</AlertTitle>
@@ -733,6 +735,7 @@ function NonActiveRightColumn({
                 <AlertDescription>{languagesError}</AlertDescription>
               </Alert>
             )}
+            <IdlePlaceholder />
           </>
         )}
         {state.phase === "uploading" && (
@@ -742,13 +745,11 @@ function NonActiveRightColumn({
           />
         )}
         {state.phase === "rejoin" && (
-          <div className="flex flex-1 items-center justify-center">
-            <RejoinCard
-              blockingJobId={state.blockingJobId}
-              blockingStatus={state.blockingStatus}
-              onRejoin={onRejoin}
-            />
-          </div>
+          <RejoinCard
+            blockingJobId={state.blockingJobId}
+            blockingStatus={state.blockingStatus}
+            onRejoin={onRejoin}
+          />
         )}
       </div>
     </>
@@ -848,7 +849,7 @@ function renderActiveFileSlot(state: ActiveState): JSX.Element {
     <section>
       <SectionEyebrow
         label="Input"
-        pill={{ text: "Locked", kind: "warn" }}
+        pill={{ text: "Locked", kind: "neutral" }}
       />
       {state.file !== null ? (
         <VideoCard
@@ -952,9 +953,26 @@ function ActiveRightColumn({
   const failedStage =
     streamState.status === "failed" ? streamState.failedStage : null;
 
+  // StatusBand progress chip — stage progress, no time (time lives in
+  // the elapsed row below):
+  //   running   → "S3/5"
+  //   succeeded → "5 stages done"
+  //   failed    → "failed · S3"
+  //   connecting → omitted
+  let progress: string | undefined;
+  if (isRunning && streamState.currentStage) {
+    const stageNum = STAGES.indexOf(streamState.currentStage) + 1;
+    progress = `S${stageNum}/5`;
+  } else if (streamState.status === "succeeded") {
+    progress = "5 stages done";
+  } else if (failedStage) {
+    const stageNum = STAGES.indexOf(failedStage) + 1;
+    progress = `failed \u00B7 S${stageNum}`;
+  }
+
   return (
     <>
-      <StatusBand kind={kind} jobId={jobId} />
+      <StatusBand kind={kind} jobId={jobId} progress={progress} />
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
         <StageProgress
           stages={streamState.stages}
@@ -970,17 +988,8 @@ function ActiveRightColumn({
             isRunning={isRunning}
           />
         )}
-        {streamState.status === "succeeded" && (
-          <>
-            <LogPanel
-              logs={streamState.logs}
-              currentStage={streamState.currentStage}
-              isRunning={false}
-            />
-            {streamState.outputUrl && (
-              <ResultPanel jobId={jobId} outputUrl={streamState.outputUrl} />
-            )}
-          </>
+        {streamState.status === "succeeded" && streamState.outputUrl && (
+          <ResultPanel jobId={jobId} outputUrl={streamState.outputUrl} />
         )}
         {streamState.status === "failed" && streamState.error && (
           <FailureCard
