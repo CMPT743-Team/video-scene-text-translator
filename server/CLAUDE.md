@@ -12,8 +12,11 @@ dict, no persistence across restarts. Same-origin static SPA mount; no CORS.
 
 ## Run
 ```bash
-# activate env first (see root CLAUDE.md)
-eval "$(/opt/miniconda3/bin/conda shell.bash hook)" && conda activate vc_final
+# Activate env first. Path depends on the box: /opt/miniforge3 on the GPU
+# dev server, /opt/miniconda3 on a local dev machine. Root CLAUDE.md lists
+# miniconda3 as the canonical location; replace the prefix if yours differs.
+eval "$(/opt/miniforge3/bin/conda shell.bash hook)" && conda activate vc_final
+# (or) eval "$(/opt/miniconda3/bin/conda shell.bash hook)" && conda activate vc_final
 
 # dev (uvicorn + Vite in parallel, Vite proxies /api to :8000)
 ./server/scripts/dev.sh
@@ -22,7 +25,7 @@ eval "$(/opt/miniconda3/bin/conda shell.bash hook)" && conda activate vc_final
 python -m uvicorn server.app.main:app --host 0.0.0.0 --port 8000
 
 # tests
-cd server && python -m pytest tests/ -v        # default: 82 unit/integ tests, no GPU
+cd server && python -m pytest tests/ -v        # default: 87 unit/integ tests, no GPU
 cd server && python -m pytest tests/ -v -m gpu # real pipeline + AnyText2, 3 tests
 ```
 
