@@ -57,15 +57,16 @@ def cleanup_job(job_id: str) -> None:
 def sweep_old_jobs(ttl_hours: float = 2.0) -> list[str]:
     """Purge job dirs older than `ttl_hours` from uploads/ and outputs/.
 
-    Returns the deduplicated list of swept job_ids. Safe to call before the
-    storage root exists (returns `[]` without creating it).
+    Returns the deduplicated list of swept job_ids **sorted lexicographically**
+    — `iterdir()` order is filesystem-dependent; sorting keeps the return
+    value stable across platforms + easy to assert in tests. Safe to call
+    before the storage root exists (returns `[]` without creating it).
     """
     root = storage_root()
     if not root.exists():
         return []
 
     cutoff = time.time() - ttl_hours * 3600
-    swept: list[str] = []
     seen: set[str] = set()
 
     for sub in ("uploads", "outputs"):
@@ -78,8 +79,6 @@ def sweep_old_jobs(ttl_hours: float = 2.0) -> list[str]:
             if job_path.stat().st_mtime < cutoff:
                 shutil.rmtree(job_path)
                 logger.info("Swept stale job dir %s", job_path)
-                if job_path.name not in seen:
-                    seen.add(job_path.name)
-                    swept.append(job_path.name)
+                seen.add(job_path.name)
 
-    return swept
+    return sorted(seen)
