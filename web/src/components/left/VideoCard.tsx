@@ -48,18 +48,16 @@ export function VideoCard({
   variant,
   sourceLang,
 }: VideoCardProps): JSX.Element {
-  // Blob URL lifecycle — create on mount / when the file changes, revoke on
-  // unmount / before creating the next one. The initial render paints with
-  // an empty src (one frame) because `useState` + `useEffect` is the only
-  // way to attach a cleanup; harmless visually.
-  const [blobUrl, setBlobUrl] = useState<string>("");
-
+  // Blob URL lifecycle. Use state + effect (not useMemo) so StrictMode's
+  // dev-only effect double-invoke doesn't leave us holding a revoked URL,
+  // and only render the <video> once the URL is set so the initial paint
+  // never carries src="" (some browsers refuse to load after that).
+  // useEffect cleanup revokes on file change + unmount (R4).
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   useEffect(() => {
     const url = URL.createObjectURL(file);
     setBlobUrl(url);
-    return () => {
-      URL.revokeObjectURL(url);
-    };
+    return () => URL.revokeObjectURL(url);
   }, [file]);
 
   const tag = cornerTagText(variant, sourceLang);
@@ -73,16 +71,18 @@ export function VideoCard({
             carries the filename for assistive tech. */}
         <div
           aria-hidden
-          className="absolute top-2 left-2 z-10 rounded-sm bg-black/70 px-[7px] py-1 font-mono text-[9px] uppercase tracking-wider text-[color:var(--ink-1)] backdrop-blur"
+          className="pointer-events-none absolute top-2 left-2 z-10 rounded-sm bg-black/70 px-[7px] py-1 font-mono text-[9px] uppercase tracking-wider text-[color:var(--ink-1)] backdrop-blur"
         >
           {tag}
         </div>
-        <video
-          controls
-          src={blobUrl}
-          aria-label={file.name}
-          className="block h-full w-full object-contain"
-        />
+        {blobUrl && (
+          <video
+            controls
+            src={blobUrl}
+            aria-label={file.name}
+            className="block h-full w-full object-contain"
+          />
+        )}
       </div>
       <div className="flex items-center justify-between gap-2 font-mono text-[10px] tracking-wide text-[color:var(--ink-3)]">
         <span className="truncate">{file.name}</span>
