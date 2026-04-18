@@ -93,56 +93,50 @@ export function FailureCard({
   return (
     <section
       aria-labelledby={headingId}
-      className="mx-auto w-full max-w-[560px] overflow-hidden rounded-md border border-[color:var(--err-line)] bg-card"
+      className="flex flex-col gap-2 rounded-md border border-[color:var(--err-line)] bg-[color:var(--err-soft)] p-5"
     >
-      {/* Decorative label strip — heading below duplicates the meaning. */}
+      {/* Mono caps label — decorative; the h2 carries the meaning. */}
       <div
         aria-hidden="true"
-        className="border-b border-[color:var(--err-line)] bg-[color:var(--err-soft)] px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-[color:var(--err)]"
+        className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--err)]"
       >
-        <span className="mr-1.5">&#x25CF;</span>
-        PIPELINE FAILED
+        <span>&#x25CF;</span>
+        Pipeline crashed
       </div>
 
-      <div className="space-y-3 px-5 py-4">
-        <h2
-          id={headingId}
-          className="text-lg font-semibold text-foreground"
+      <h2
+        id={headingId}
+        className="text-[17px] font-semibold tracking-tight text-[color:var(--err)]"
+      >
+        {message}
+      </h2>
+      <p className="text-sm text-[color:var(--ink-1)]">{description}</p>
+
+      {hasTraceback && (
+        <details open className="mt-2">
+          <summary className="cursor-pointer font-mono text-[11px] tracking-wide text-[color:var(--ink-1)] hover:text-[color:var(--ink-0)]">
+            show traceback
+          </summary>
+          <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-[color:var(--err-line)] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-[color:var(--ink-1)]">
+            {traceback}
+          </pre>
+        </details>
+      )}
+
+      <div className="mt-1 flex items-center gap-2">
+        {/* sr-only sibling live region — see docstring. */}
+        <span className="sr-only" aria-live="polite">
+          {copied ? "Copied error to clipboard" : ""}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleCopy}
+          className="border-[color:var(--err-line)] bg-transparent text-[color:var(--err)] hover:bg-[color:var(--err-soft)] hover:text-[color:var(--err)]"
         >
-          {message}
-        </h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
-
-        {hasTraceback && (
-          <details>
-            <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              Show traceback
-            </summary>
-            <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-border bg-[color:var(--bg-2)] p-3 font-mono text-[11px] leading-relaxed text-foreground">
-              {traceback}
-            </pre>
-          </details>
-        )}
-
-        <div className="flex items-center justify-end gap-2">
-          {/*
-           * Always-mounted live region. Empty when idle, populated on
-           * click; SRs announce the change. Must be a sibling of the
-           * button (not its child) so the live-region semantics live
-           * on a static element.
-           */}
-          <span className="sr-only" aria-live="polite">
-            {copied ? "Copied error to clipboard" : ""}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopy}
-          >
-            {copied ? "Copied" : "Copy error"}
-          </Button>
-        </div>
+          {copied ? "Copied" : "Copy error"}
+        </Button>
       </div>
     </section>
   );
