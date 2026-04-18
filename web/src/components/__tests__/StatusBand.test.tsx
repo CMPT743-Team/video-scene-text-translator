@@ -15,9 +15,9 @@ describe("<StatusBand>", () => {
       ["idle", /READY WHEN YOU ARE/i],
       ["uploading", /^UPLOADING$/],
       ["connecting", /CONNECTING/i],
-      ["running", /PIPELINE.+ONE WINDOW/i],
-      ["succeeded", /RESULT.+SAME WINDOW/i],
-      ["failed", /FAILURE.+SAME WINDOW/i],
+      ["running", /PIPELINE/],
+      ["succeeded", /RESULT/],
+      ["failed", /FAILURE/],
       ["blocked", /ACTION REQUIRED/i],
     ];
     for (const [kind, rx] of cases) {

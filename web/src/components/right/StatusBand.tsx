@@ -61,9 +61,9 @@ const EYEBROW: Record<StatusBandKind, string> = {
   idle: "READY WHEN YOU ARE",
   uploading: "UPLOADING",
   connecting: "CONNECTING",
-  running: "PIPELINE \u00B7 ONE WINDOW",
-  succeeded: "RESULT \u00B7 SAME WINDOW",
-  failed: "FAILURE \u00B7 SAME WINDOW",
+  running: "PIPELINE",
+  succeeded: "RESULT",
+  failed: "FAILURE",
   blocked: "ACTION REQUIRED",
 };
 
