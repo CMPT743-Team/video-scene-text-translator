@@ -47,9 +47,9 @@ close-but-not-quite, can I wrap it? Default to "yes, use shadcn."
   409), `active` (job submitted, SSE open). Transitions are pure —
   `dispatch({type: ...})` only, no imperative state pokes.
 - `<AppShell>` is a presentational two-column frame (400 px left, flex
-  right, fixed 1080×760). It takes `left` and `right` slot children; it
-  never touches domain state. Below 1080 px viewport width, it renders
-  `<DesktopRequired>` instead.
+  right, fluid within `max 1440×880` / `min 960×620`). It takes `left`
+  and `right` slot children; it never touches domain state. Below
+  960 × 620 px viewport, it renders `<DesktopRequired>` instead.
 - Non-active phases (`idle`, `uploading`, `rejoin`) render directly from
   `App` via `renderFileSlot / renderLanguagePairSlot / renderSubmitSlot`
   helpers that switch on `state.phase`. Each helper returns the correct
@@ -102,6 +102,11 @@ close-but-not-quite, can I wrap it? Default to "yes, use shadcn."
 - API paths live in `api/client.ts` only. A repo-wide grep for
   `/api/jobs/` should not return hits outside that file — use
   `outputUrl(jobId)` / `eventsUrl(jobId)` helpers everywhere else.
+- `<LogPanel>` is deliberately hidden in terminal (succeeded / failed)
+  phases — it only renders while `connecting` or `running`. The terminal
+  surfaces (`ResultPanel`, `FailureCard`) carry the primary affordance
+  post-run; the mockup's 04-succeeded / 05-failed screens never show the
+  log. Revisit if debug-after-the-fact UX proves necessary.
 
 ## Gotchas
 - `tsc -b` runs as part of `npm run build` (project references). Any
@@ -116,15 +121,17 @@ close-but-not-quite, can I wrap it? Default to "yes, use shadcn."
 - `<video>` has no implicit ARIA role in jsdom; in tests use
   `container.querySelector("video")` rather than
   `getByRole("video"|"application")`.
-- `<AppShell>` gates on `window.innerWidth >= 1080`. jsdom defaults to
-  1024. Tests that render `<AppShell>` (or `<App>`) must set
-  `Object.defineProperty(window, "innerWidth", { value: 1280 })` in
-  `beforeAll` — otherwise `<DesktopRequired>` renders instead and every
-  left/right-column assertion fails silently. See `App.test.tsx` for
+- `<AppShell>` gates on `window.innerWidth >= 960 && innerHeight >= 620`.
+  jsdom defaults to 1024 × 768 — above both floors today, but tests that
+  render `<AppShell>` (or `<App>`) still pin both dimensions in
+  `beforeAll` (`innerWidth: 1440`, `innerHeight: 900`) so a jsdom default
+  change can't silently flip us onto `<DesktopRequired>` and every
+  left/right-column assertion fail silently. See `App.test.tsx` for
   the pattern.
-- `formatBytes` is inlined in two places (`App.tsx` and
-  `components/right/UploadProgress.tsx`). Rule-of-three has not fired
-  yet — if a third consumer appears, extract to `src/utils/`.
+- `formatBytes` lives in `src/lib/format.ts` — the single base-1024
+  tiered-unit helper used by `App.tsx` + `components/right/UploadProgress.tsx`.
+  Extracted post-Step 14; import from `@/lib/format` rather than inlining
+  a fourth copy.
 
 ## Do NOT
 - Don't duplicate language codes client-side. Always fetch from

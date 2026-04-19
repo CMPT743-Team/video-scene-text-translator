@@ -1,8 +1,8 @@
 /**
- * <DesktopRequired> — static info card shown when the viewport is narrower
- * than the app shell's fixed 1080 px inner width. No CTA — the only fix is
- * for the user to widen their browser window. Rendered as a replacement for
- * <AppShell>, not wrapped by it (see <AppShell>'s viewport guard).
+ * <DesktopRequired> — static info card shown when the viewport is smaller
+ * than the app shell's 960 × 620 px floor. No CTA — the only fix is for the
+ * user to widen / tallen their browser window. Rendered as a replacement
+ * for <AppShell>, not wrapped by it (see <AppShell>'s viewport guard).
  */
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";

@@ -17,9 +17,10 @@
  *
  * Viewport
  * --------
- * jsdom's default 1024 × 768 is below the 1080 cutoff that <AppShell>
- * guards, so every test widens `window.innerWidth` first. `beforeAll`
- * sets 1440; tests never shrink it again.
+ * <AppShell> gates on innerWidth >= 960 and innerHeight >= 620. jsdom's
+ * default 1024 × 768 clears both floors, but `beforeAll` still pins
+ * innerWidth to 1440 and innerHeight to 900 so a future jsdom default
+ * change can't silently flip us to the DesktopRequired fallback.
  */
 
 import {
@@ -112,6 +113,14 @@ function setViewportWidth(w: number): void {
   });
 }
 
+function setViewportHeight(h: number): void {
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    writable: true,
+    value: h,
+  });
+}
+
 function makeFile(name = "clip.mp4", bytes = 1024): File {
   return new File([new Uint8Array(bytes)], name, { type: "video/mp4" });
 }
@@ -138,6 +147,7 @@ function baseJobStatus(overrides: Partial<JobStatus> = {}): JobStatus {
 
 beforeAll(() => {
   setViewportWidth(1440);
+  setViewportHeight(900);
 });
 
 beforeEach(() => {
