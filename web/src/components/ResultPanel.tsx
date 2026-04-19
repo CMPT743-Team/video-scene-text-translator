@@ -26,8 +26,14 @@ export function ResultPanel({
   outputUrl,
 }: ResultPanelProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="relative overflow-hidden rounded-md border border-border bg-black">
+    // flex-1 + min-h-0 so the panel fills the right column's remaining
+    // vertical space (below StageProgress). The video area then flex-fills
+    // within that budget while the download button keeps its intrinsic
+    // height. Without min-h-0, flex children refuse to shrink below their
+    // intrinsic size and the whole right column scrolls on short viewports
+    // (e.g. 13" Mac after browser chrome).
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-black">
         {/* Corner tag — cosmetic, so `aria-hidden`. */}
         <div
           aria-hidden
@@ -35,10 +41,12 @@ export function ResultPanel({
         >
           OUTPUT
         </div>
+        {/* object-contain letterboxes the video inside the flex-filled
+            container so any aspect ratio stays intact without overflowing. */}
         <video
           controls
           preload="metadata"
-          className="block aspect-video w-full bg-black"
+          className="block h-full w-full bg-black object-contain"
           aria-label={`Translated output for job ${jobId}`}
         >
           <source src={outputUrl} type="video/mp4" />
@@ -51,7 +59,7 @@ export function ResultPanel({
         download="translated.mp4"
         className={cn(
           buttonVariants({ variant: "default" }),
-          "w-full gap-2 bg-[color:var(--ok)] text-[color:var(--bg-0)] no-underline",
+          "w-full shrink-0 gap-2 bg-[color:var(--ok)] text-[color:var(--bg-0)] no-underline",
           "hover:bg-[color:var(--ok)] hover:brightness-110",
           "focus-visible:ring-[color:var(--ok)]",
         )}
