@@ -1,0 +1,34 @@
+\maketitle
+
+\section{Introduction}
+\label{sec:intro}
+
+Scene text in video is a fundamental component of real-world visual communication, appearing in advertisements, street scenes, signage, and instructional content. We address the problem of cross-language scene text replacement in video, where text embedded in natural video frames must be detected, translated, and replaced while preserving visual realism and temporal consistency.
+
+This task is closely related to video localization, where visual content must be adapted across languages and regions. In practice, this is still largely performed using manual techniques such as rotoscoping, 3D tracking, or reshooting, which are expensive and time-consuming. Automating this process enables applications in multilingual media, accessibility, augmented reality, and large-scale content adaptation.
+
+Recent image-based scene text editing methods such as CLASTE \cite{claste} and TextMastero \cite{textmastero} achieve strong visual quality but are limited to static images and fail to model temporal consistency. Similarly, font transfer methods \cite{fewshotfont, fontify} improve cross-lingual style consistency but remain image-based.
+
+On the other hand, video generation models achieve strong global coherence but lack fine-grained control over text, often producing distorted or incorrect glyphs. Prior work such as STRIVE \cite{strive} introduces multi-stage pipelines for video scene text replacement, but still struggles with lighting variation, motion blur, and tracking instability.
+
+\subsection{Problem Difficulty}
+
+Cross-language scene text replacement in video is challenging because it requires satisfying multiple constraints simultaneously: accurate translation, geometric alignment under perspective distortion, temporal consistency, and photorealistic rendering under varying lighting and motion conditions. Existing methods typically address only subsets of these challenges.
+
+\subsection{Input and Output}
+
+Given an input video $V = \{F_1, ..., F_n\}$ containing scene text, the goal is to produce an output video $V'$ where text is replaced with a target language while preserving geometry, appearance, and temporal consistency.
+
+\subsection{Contributions}
+
+Our main contributions are:
+\begin{itemize}
+    \item A modular pipeline for cross-language scene text replacement in video
+    \item A reference-based editing strategy that improves temporal consistency
+    \item A propagation module with explicit modeling of lighting and motion blur
+    \item A learned blur prediction module for improved temporal appearance consistency
+\end{itemize}
+
+\subsection{Performance Improvement}
+
+Our method improves temporal stability and geometric alignment compared to generative video editing baselines, reducing flickering artifacts while maintaining competitive visual realism.

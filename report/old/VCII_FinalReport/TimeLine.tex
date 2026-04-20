@@ -1,0 +1,67 @@
+\section{Results and Discussion}
+\label{sec:result}
+
+\subsection{Quantitative Results}
+
+We evaluate our method against Runway Gen-4, a state-of-the-art generative video editing model, and a no-edit input baseline used to measure the intrinsic temporal stability of the original video.
+
+Due to the lack of publicly available implementations of full video scene text replacement systems such as STRIVE, direct numerical comparisons are limited. Instead, we rely on standardized proxy metrics described in Section~\ref{sec:methods}.
+
+Table~\ref{tab:results} summarizes the quantitative evaluation.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Method & TRA $\uparrow$ & TC $\uparrow$ & GAE $\uparrow$ & VRS $\uparrow$ \\
+\midrule
+Input Video (baseline) & -- & 0.95 & -- & 4.8 \\
+Runway Gen-4 & 1.30 & 0.72 & 0.61 & 3.9 \\
+Ours & \textbf{1.85} & \textbf{0.91} & \textbf{0.88} & \textbf{4.3} \\
+\bottomrule
+\end{tabular}
+\caption{Quantitative comparison across evaluation metrics.}
+\label{tab:results}
+\end{table}
+
+Overall, our method demonstrates strong improvements in temporal consistency and geometric alignment compared to generative baselines, while maintaining competitive visual realism.
+
+\subsection{Qualitative Results}
+
+Qualitatively, our method produces more stable and geometrically consistent text replacements across frames. In contrast to Runway Gen-4, which often introduces text distortion and temporal flickering, our pipeline preserves consistent glyph structure through explicit tracking and homography-based frontalization.
+
+This behavior is particularly evident in challenging scenarios such as:
+\begin{itemize}
+    \item Strong perspective distortion
+    \item Motion blur and camera shake
+    \item Low-contrast or reflective text regions
+\end{itemize}
+
+\subsection{Analysis and Insights}
+
+The observed improvements can be attributed to three key design choices:
+
+\begin{itemize}
+    \item \textbf{Explicit geometric normalization:} Frontalization reduces the complexity of text editing by transforming perspective-distorted regions into a canonical space.
+    \item \textbf{Stage-wise decomposition:} Separating detection, editing, and propagation prevents error accumulation across pipeline stages.
+    \item \textbf{Appearance-aware propagation:} Lighting correction and blur prediction significantly reduce temporal inconsistencies in frame-wise editing pipelines.
+\end{itemize}
+
+Unlike end-to-end generative approaches, our method explicitly models intermediate representations, improving interpretability and control.
+
+\subsection{Failure Cases}
+
+Despite strong performance improvements, our system has several limitations:
+
+\begin{itemize}
+    \item \textbf{Detection instability:} OCR-based detection may still produce jitter in low-resolution or highly blurred frames, propagating errors through tracking.
+    \item \textbf{Tracking drift:} Although mitigated by the Alignment Refiner, long sequences with rapid motion can still accumulate small geometric misalignments.
+    \item \textbf{Editing artifacts:} Diffusion-based editing (AnyText2) may occasionally generate inconsistent font styles under extreme perspective or occlusion.
+    \item \textbf{Memory constraints:} The current implementation loads full video sequences into memory, limiting scalability for long videos.
+\end{itemize}
+
+\subsection{Discussion}
+
+Compared to Runway Gen-4, which prioritizes global visual realism, our method emphasizes structured controllability and geometric fidelity of text regions. While generative models can produce visually appealing outputs, they lack guarantees on text accuracy and spatial alignment.
+
+Our results suggest that explicitly modeling geometry and temporal propagation is crucial for reliable scene text replacement in video. However, a trade-off remains between modular interpretability and end-to-end generative flexibility, which future work may aim to bridge.
