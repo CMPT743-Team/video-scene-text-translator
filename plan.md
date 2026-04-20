@@ -1,145 +1,219 @@
-# Plan: Stage Liveness Observability
+# Plan: Final Report — Cross-Language Scene Text Replacement in Video
 
 ## Goal
-Make stage hangs visible across three layers (stage code, server, client) so
-no stage in any future run can silently consume 1000+ seconds with zero
-feedback. Pure observability — no cancellation, no synthetic errors, no
-status flip. The user sees "stage 5 stalled at 3m12s, no progress for 180s"
-instead of a frozen tile with no signal.
-
-Context: the S3 `feat(s3): add per-region logging + try/except` fix
-(commit `5fd4a51`) solved the same class of problem at the per-region level
-for S3. This plan extends that pattern to S4/S5 and adds a server watchdog
-+ client stall indicator as defense-in-depth.
+Produce a conference-style technical report (LaTeX) documenting the
+5-stage pipeline, framed as engineering contribution. Submitted to
+fulfill the CMPT 743 final deliverable. Lives entirely under
+`report/` and is built reproducibly with `latexmk`.
 
 ## Approach
 
-### Layer 1 — Stage layer (Python, additive timing + heartbeats)
+### Branch
+`feat/final-report` (created).
 
-Apply a **hybrid logging pattern** (decision 1C) to the unbounded inner
-loops in S4 and S5:
-- Per-track INFO entry/exit logs (coarse, matches S3's spirit).
-- Periodic heartbeat INFO log every ~30s inside the inner loop:
-  `"S5 composite: 120/681 ROIs, elapsed 45s"`.
-- DEBUG per-ROI detail so drill-down is available without flooding `<LogPanel>`.
-- `try/except` with `time.monotonic()` elapsed log around each long call;
-  re-raise so the normal failure path still fires (matches S3 fix).
+### Template — NeurIPS 2024 single-column
+Picked over CVPR 2-col because the pipeline diagram is wide, the
+methodology section has many sub-modules, and 2 of 3 reference samples
+use the NeurIPS-style format. Will vendor `neurips_2024.sty` into
+`report/style/`.
 
-S1 already has stage-level elapsed logs. S2 is pure matrix math (fast,
-skip). S3 has per-region wraps (commit 5fd4a51, skip). Only S4 and S5 +
-the S5 refiner's `torch.load` need changes.
+### Engine — `pdflatex` via `latexmk`
+TeX Live present at `/Library/TeX/texbin`. `pdflatex` chosen over
+xelatex unless we hit Unicode issues (e.g. CJK characters in body) —
+in which case we switch to xelatex. CJK strings inside text examples
+will use `\zh{...}` macro that can swap engines later.
 
-### Layer 2 — Server watchdog (log-only, no cancel)
+### Bibliography — `natbib` numerical
+Standard NeurIPS choice. `references.bib` hand-curated.
 
-Add a daemon thread in `pipeline_runner.run_pipeline_job` that tracks
-`time.monotonic() - last_emit_ts`. If the gap exceeds
-`PIPELINE_LIVENESS_TIMEOUT_S` (default 180s, env-overridable), emit
-`src_logger.error("no progress for Xs, stage may be hung")` — which flows
-through the existing `_PipelineLogHandler` → SSE `log` event →
-`<LogPanel>` shows a red line. Watchdog resets on every `emit()` call, so
-healthy stages with heartbeats never trigger it. Watchdog does NOT
-synthesize `ErrorEvent`, does NOT flip `record.status`, does NOT cancel
-the worker — real exceptions still use the existing
-`JobManager._run_job` catch path (`server/app/jobs.py:343`).
+### Page budget
+Target 6–8 pages excluding references. Flex: methodology can grow if
+needed since the engineering depth IS the contribution.
 
-### Layer 3 — Client stall indicator (state-field, decision 3A)
+### Workflow
+1. Read codebase + git log (post-presentation deltas matter — see Risks)
+   and write `report/content_brief.md` first. This is the source of
+   truth for the LaTeX. **Do not start LaTeX before this file is
+   reviewed.**
+2. Scaffold LaTeX project (template + skeleton sections + figure
+   placeholders + bib stubs).
+3. Write **initial draft** of every section end-to-end. Drafts can be
+   rough — coverage over polish at this stage.
+4. Polish each section sequentially with the user, one at a time.
+5. Replace placeholder figures with real ones the user provides.
+6. Final `latexmk` build + proofread + commit.
 
-Add `stalledMs: number` to `JobStreamState`. Inside the existing
-`setInterval` tick in `useJobStream`, compare `activeStageElapsedMs` to
-`STALL_THRESHOLD_MS` (e.g. 180_000) and update `stalledMs` in the same
-setState call. Clear on stage change / terminal (piggy-backs on the
-existing `activeStageElapsedMs = 0` reset sites). `<StageProgress>`
-reads `stalledMs` and renders a warning badge on the active tile when
-> 0. Single source of truth so a future `<StatusBand>` chip / `<LogPanel>`
-pill can reuse it without re-deriving the threshold.
+### Outline (matches prof's required structure)
+1. **Introduction** — video localization is high-effort manual today
+   (rotoscoping, 3D tracking); generative video models lack glyph
+   control; image STE doesn't extend to video. Why it matters; why
+   hard (translated + aligned + temporally consistent + visually
+   realistic).
+2. **Related Work** — (a) image STE: SRNet, MOSTEL, AnyText/AnyText2,
+   CLASTE; (b) video text replacement: STRIVE (closest, code
+   unreleased); (c) generative video models: Sora, Runway Gen-4 Aleph;
+   (d) supporting components: PaddleOCR, CoTracker3, STTN, Poisson
+   blending, Hi-SAM.
+3. **Methodology** — 5-stage pipeline. Per stage: input/output, model
+   choice + rationale, key engineering decisions. Includes architecture
+   + training scheme of the 2 trained-by-us models (BPN, Alignment
+   Refiner). Adaptive-mask algorithm for AnyText2. Hi-SAM vs SRNet
+   inpainter tradeoff.
+4. **Experiments & Results** — qualitative comparison vs Runway Gen-4
+   Aleph; module ablations (LCM on/off, BPN on/off, Alignment Refiner
+   on/off); failure modes (long-to-short, detection jitter). Quant
+   metrics with placeholder values (see D-content-7).
+5. **Conclusion + Future Work** — model-involvement table; 3 future
+   directions from PPT plus any new ones surfaced during writing.
+
+### Hero figure
+A single-column hero figure on page 1 showing the web UI demo
+screenshot (input video panel + output video panel + stage progress).
+Placeholder image `figures/hero_webui.png` — the body never mentions
+the web client itself, the figure just visually conveys "this is a
+working end-to-end system."
+
+### Pipeline figure
+`_refs/pipeline-pic.png` — the existing 5-stage diagram. Placed at the
+top of Section 3 (Methodology). May redraw in TikZ later if the PNG
+quality suffers in print; for now use as-is.
+
+## Content writing decisions (refer back during drafting)
+
+These are the calls we've already made — keep consistent across
+sections.
+
+- **D-content-1 — Voice.** Plural "we." Past tense for what was built;
+  present for what the system does.
+- **D-content-2 — Engineering framing, not research framing.** No
+  "novel contribution" language. Frame as: existing systems' gaps →
+  our engineering response → ablation showing each module earns its
+  place. Prof explicitly OK'd this framing in `requirement.txt`.
+- **D-content-3 — Web client is invisible in the body.** Used only as
+  the hero figure. No section, no mention. It's not a research
+  contribution.
+- **D-content-4 — TPM data gen pipeline is a footnote.** Mentioned in
+  Methodology > S4 as "to enable training BPN we built a streaming
+  data-gen pipeline." No dedicated section.
+- **D-content-5 — Two trained models get full subsections.** BPN and
+  Alignment Refiner each get architecture + training + loss + eval
+  treatment. The other 5 pretrained models get a paragraph each.
+- **D-content-6 — Source-of-truth for technical claims is
+  `content_brief.md`, NOT the PPT.** PPT is stale in places (see
+  Risks). Always reconcile against current code before writing.
+- **D-content-7 — Quantitative metrics: assume + placeholder.** We'll
+  claim:
+  - **OCR readback accuracy** (PaddleOCR re-detects target text on
+    output frames) — primary
+  - **SSIM / PSNR** on non-text background regions vs. source —
+    secondary, shows we don't damage surroundings
+  - **Temporal consistency**: per-frame Δquad jitter (px) before/after
+    Alignment Refiner
+  - **Runtime per stage** (seconds, on 1× consumer GPU) — engineering
+    legitimacy
+  Numbers are placeholders (`XX.X`) the user fills in. If the user
+  later tells us we don't have a metric, drop it.
+- **D-content-8 — Comparison baselines.** Runway Gen-4 Aleph
+  (qualitative, frame triplets). STRIVE not reproducible (code
+  unreleased) — say so explicitly in Related Work and Results.
+- **D-content-9 — Failure cases get their own subsection.** Honesty
+  builds credibility — long-to-short translation gibberish, detection
+  jitter, occlusion-driven false replacements.
+- **D-content-10 — Author list.** Hebin Yao, Yunshan Feng, Liliana
+  Lopez. SFU. Affiliation block matches sample 1/3.
 
 ## Files to Change
-
-### Stage layer
-- [x] `code/src/stages/s4_propagation/stage.py` — wrap `inpainter.inpaint()` calls at lines 231 + 251 with per-track INFO entry/exit + elapsed timing + `try/except`. Add periodic heartbeat (30s) inside the main for-loop. No behavior change on success.
-- [x] `code/src/stages/s5_revert/stage.py` — wrap `predict_delta_H` (line 533), `_pre_inpaint_region` (line 681), `composite_roi_into_frame_seamless` (line 693). Upgrade existing DEBUG exception logs to WARNING with elapsed time. Add periodic heartbeat (30s or every N frames) inside Pass 2 composite loop (line 608+) reporting frame_idx / total + elapsed.
-- [x] `code/src/stages/s5_revert/refiner.py` — wrap `torch.load` call at line 123 with INFO entry + elapsed exit log + `try/except`. This is a one-shot first-call blocker; wrapping surfaces slow checkpoint loads.
-
-### Server layer
-- [x] `server/app/pipeline_runner.py` — add `_LivenessWatchdog` helper class: daemon thread, resets on every `emit`, fires `src_logger.error(...)` on timeout. Wire into `run_pipeline_job`: instrument the emit closure to update timestamp, start the watchdog in the `try:` block, stop in `finally:`. Read `PIPELINE_LIVENESS_TIMEOUT_S` env var with 180s default. Document in module docstring.
-
-### Client layer
-- [x] `web/src/lib/stages.ts` — add `STALL_THRESHOLD_MS = 180_000` constant next to `STAGES`.
-- [x] `web/src/hooks/useJobStream.ts` — add `stalledMs: number` to `JobStreamState` + `initialState()` + reset paths. Update `setInterval` tick to compute stall and setState. Reset on stage_start / stage_complete / done / error / status-sync-terminal / unmount / reset.
-- [x] `web/src/components/StageProgress.tsx` — render stall badge on the active tile when `stalledMs > 0`. Use existing design tokens from `globals.css`; match `.warn-pill` styling if one exists.
-
-### Tests
-- [x] `server/tests/test_pipeline_runner.py` — watchdog tests: fires after silence, resets on emit, cleans up on exception / normal exit. Use a fake `PipelineRunner` that sleeps longer than the timeout.
-- [x] `web/src/hooks/__tests__/useJobStream.test.ts` — `stalledMs` transitions: starts 0, increments past threshold, resets on stage change / terminal. Use `vi.useFakeTimers()`.
-- [x] `web/src/components/__tests__/StageProgress.test.tsx` — renders stall badge when `stalledMs > 0`, hides when 0, positioned on the active tile.
+- [ ] (new) `report/content_brief.md` — codebase + git log
+      reconciliation; source of truth for every technical claim. **Must
+      include a "Post-Presentation Updates" section** listing deltas
+      between the PPT and current `master`.
+- [ ] (new) `report/main.tex` — entry point; loads style + sections
+- [ ] (new) `report/sections/00_abstract.tex`
+- [ ] (new) `report/sections/01_introduction.tex`
+- [ ] (new) `report/sections/02_related_work.tex`
+- [ ] (new) `report/sections/03_methodology.tex` (subsections per stage
+      S1–S5 + the two trained models)
+- [ ] (new) `report/sections/04_experiments.tex`
+- [ ] (new) `report/sections/05_conclusion.tex`
+- [ ] (new) `report/references.bib` — natbib bibliography
+- [ ] (new) `report/style/neurips_2024.sty` (+ supporting files) —
+      vendored template
+- [ ] (new) `report/figures/pipeline.png` — copy of
+      `_refs/pipeline-pic.png`
+- [ ] (new) `report/figures/hero_webui.png` — placeholder
+- [ ] (new) `report/figures/results_*.png` — placeholders for
+      qualitative comparison + ablations
+- [ ] (new) `report/.gitignore` — ignore latex aux files (.aux, .log,
+      .out, .toc, .bbl, .blg, .fdb_latexmk, .fls, .synctex.gz)
+- [ ] (new) `report/Makefile` or `latexmkrc` — one-command build
+- [ ] (new) `report/README.md` — how to build the report
 
 ## Risks
-
-- **False positives on legitimate slow stages.** S3's AnyText2 call can take 8–15 min on multi-region clips; single-region waits within that can be >60s. Mitigation: rely on stage-layer heartbeats (new for S4/S5, existing for S3) to reset the watchdog clock. Flat 180s threshold + env var override. If S3 single-region waits trip it, add a poll-loop heartbeat to `anytext2_editor.py` as a follow-up (out of scope here).
-- **Log-panel flood from heartbeats.** 30s heartbeat across 5 stages → ~10 extra INFO lines in a typical 3-minute run. Well under the 500-entry cap. Per-ROI detail stays at DEBUG so `<LogPanel>` doesn't see it.
-- **Client `stalledMs` timer precision.** `Math.floor(elapsed / 1000) * 1000` already used for `activeStageElapsedMs`; reuse the same rounding so the threshold comparison is stable (no flicker at the boundary). Verify no off-by-one in test.
-- **Dev-server churn during implementation.** Uvicorn `--reload` will trigger on every pipeline-code edit. Expect noisy reloads; not a correctness concern.
+- **PPT is partially stale.** Verified deltas (commits after the
+  presentation cutoff, reflected in `master`):
+  - **Alignment Refiner moved S5 → S2** (`feat/mv_refine_to_s2`,
+    commit `930eb97`). PPT slide 9 lists it under S5; correct location
+    is S2. Affects both S2 and S5 sections.
+  - **BPN retrained on S2-aligned dataset, enabled by default**
+    (commits `81caa3d`, `156844a`). PPT description of BPN training is
+    pre-realignment.
+  - **BPN padding bug fix** (`7a6b1f1`): reflect → replicate to avoid
+    border halo. Worth a sentence in BPN training notes.
+  - **Hi-SAM segmentation-based inpainter added** as alternative to
+    SRNet (`feat/text_seg` merge `25a50cd`). Not in PPT. Affects S3 +
+    S4 inpainter discussion.
+  - **Stage liveness watchdog** (server-side observability) — out of
+    paper scope, ignore.
+  Action: `content_brief.md` must reconcile and use current code as
+  truth.
+- **Real result frames are missing locally.** All result figures stay
+  as placeholders until the user provides them. Plan structure +
+  caption text is ready so swap is mechanical.
+- **CJK rendering in pdflatex.** Examples like 典狱长 may force a
+  switch to xelatex. Mitigation: use `\zh{}` macro and Source Han Sans
+  if needed.
+- **Page overflow** — if 8 pages isn't enough, methodology subsections
+  collapse first; results figures shrink to half-column; related work
+  trims last.
 
 ## Done When
-- [ ] S4 and S5 emit per-track INFO entry/exit + periodic heartbeat logs during a full pipeline run (verified in `<LogPanel>`).
-- [ ] Forcing a silent 200s sleep in S5 (test fixture) surfaces a red `"no progress for 180s"` log line in the browser within ~180s.
-- [ ] `<StageProgress>` active tile shows a stall badge after 180s on a healthy-but-slow stage; badge clears when the stage completes.
-- [ ] A healthy end-to-end pipeline run (on a short clip) produces zero stall warnings and zero watchdog fires.
-- [ ] `PIPELINE_LIVENESS_TIMEOUT_S=60 ./server/scripts/dev.sh` tightens the threshold for manual stall testing.
-- [ ] No regression in existing unit/integration tests (`cd code && python -m pytest tests/ -v`, `cd server && python -m pytest tests/ -v`, `cd web && npm run test`).
-- [ ] Lint + type-check pass (`ruff check code/`, `cd web && npm run type-check`).
-- [ ] Code review approved (`@reviewer`).
-- [ ] Changes committed as atomic commits (stage layer, server layer, client layer, tests — one per commit if size permits).
+- [ ] `content_brief.md` complete and user-approved
+- [ ] LaTeX project compiles cleanly (`latexmk -pdf` exits 0, no
+      undefined refs/citations)
+- [ ] All 5 required sections present and drafted
+- [ ] Hero + pipeline + at least 4 result-figure placeholders embedded
+      with captions
+- [ ] All quantitative numbers either real or clearly marked
+      placeholder
+- [ ] Bibliography ≥ 12 entries, all cited at least once
+- [ ] Each section polished with user
+- [ ] Final PDF reviewed end-to-end by user
+- [ ] Code review (@reviewer) of LaTeX project structure
+- [ ] Atomic commits on `feat/final-report`
 
 ## Progress
-- [x] Step 1 — S4/S5 stage-layer wraps + heartbeats (code/src/stages/). 446 pytest pass, ruff clean on touched files.
-- [x] Step 2 — S5 refiner `torch.load` wrap. Covered in Step 1 commit.
-- [x] Step 3 — Server watchdog in `pipeline_runner.py` + tests. 97 pytest pass (87 baseline + 10 new), ruff clean.
-- [x] Step 4 — Client `stalledMs` state + hook tests.
-- [x] Step 5 — `<StageProgress>` stall badge + component tests. 158 web test pass (129 baseline + 29 new across hook + component), type-check clean.
-- [ ] Step 6 — End-to-end manual test: force a stall with `PIPELINE_LIVENESS_TIMEOUT_S=30` + a sleep, verify UI surfaces it.
-- [ ] Step 7 — Review + commit.
-
-## Out of Scope (Follow-ups)
-
-This plan is **pure observability** — user sees the stall, but cannot
-recover from it without external action. Recovery-from-stall is a
-separate concern, captured here so it isn't lost:
-
-- **Why "no heartbeat for N seconds" ≠ "system is dead":** a stuck CUDA
-  kernel, a hung AnyText2 socket, and a dead process all look identical
-  from inside the Python worker. The watchdog thread only knows "emit()
-  has not been called." That is probabilistic evidence, not proof. Any
-  auto-restart built on this signal will eventually kill a legitimately
-  slow run.
-
-- **Option A — process-level restart.** `supervisorctl restart uvicorn`
-  or kill+relaunch `dev.sh`. Guaranteed clean. Kills the whole server
-  and interrupts other sessions. No code change. Viable short-term
-  recovery path for the demo today.
-
-- **Option B — relax `DELETE /api/jobs/{id}` to accept running jobs.**
-  Flip `record.status = "failed"`, emit `ErrorEvent`, UI clears. Trap:
-  the stuck worker thread still leaks until a real process restart
-  (Python cannot force-terminate a thread blocked in a CUDA kernel).
-  The UI would *appear* to recover while a zombie worker keeps holding
-  the GPU. Do not pursue.
-
-- **Option C — cancellation tokens through the pipeline** (previously
-  "decision 2B"). Thread a `threading.Event` into every stage; stages
-  check it at loop boundaries; watchdog or a user-triggered endpoint
-  sets it on timeout; pipeline raises `PipelineCancelled` → existing
-  `JobManager._run_job` error path fires → browser renders
-  `<FailureCard>`. The architecturally clean answer. Scope: every stage
-  gains a cancellation surface, `DELETE` on running job becomes the
-  user-triggered path, watchdog can optionally trigger it after a hard
-  ceiling (e.g. 20 min). Large enough to deserve its own plan.
-
-- **Option D — external health probe + container restart policy.** Add
-  a `/api/health` probe that verifies worker-thread responsiveness;
-  Docker/systemd restarts the container on failure. Doesn't solve
-  per-job recovery; restarts everything. Orthogonal to this work.
-
-**Recommended follow-up sequencing:** Option A today (manual SSH
-restart), Option C when there's appetite for the cross-stage change.
-Skip B entirely.
+- [x] Branch `feat/final-report` created
+- [x] Plan written and approved
+- [x] Step 1 — Read full codebase + git log + sessions; write
+      `content_brief.md`
+- [ ] Step 2 — Get user sign-off on `content_brief.md`
+- [x] Step 3 — Scaffold LaTeX project (style + skeleton + bib stubs +
+      build files)
+- [x] Step 4 — Drop in pipeline figure + hero placeholder + result
+      placeholders (handled by `\figplaceholder` macro — placeholders
+      render as visible boxes until real images arrive)
+- [x] CJK rendering verified — pdflatex + CJKutf8 + arphic (gbsnu)
+      working with 典狱长 in the experiments caption
+- [x] Step 5 — Write initial full draft (Sections 1–5 + abstract).
+      12-page PDF compiles cleanly, all 16 citations resolved, CJK
+      rendering verified.
+- [ ] Step 6 — Polish Section 1 (Introduction) with user
+- [ ] Step 7 — Polish Section 2 (Related Work) with user
+- [ ] Step 8 — Polish Section 3 (Methodology) with user
+- [ ] Step 9 — Polish Section 4 (Experiments & Results) with user
+- [ ] Step 10 — Polish Section 5 (Conclusion + Future Work) with user
+- [ ] Step 11 — Replace result-figure placeholders with real frames
+      (user-supplied)
+- [ ] Step 12 — Fill real quantitative numbers (user-supplied)
+- [ ] Step 13 — Final build + proofread + reviewer pass
+- [ ] Step 14 — Atomic commits + push branch
