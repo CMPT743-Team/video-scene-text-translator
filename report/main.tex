@@ -18,6 +18,12 @@
 \renewcommand{\@notice}{}
 \makeatother
 
+% NeurIPS style sets \flushbottom, which stretches vertical glue to
+% align every page to the bottom. On pages whose content doesn't
+% naturally fill the column, this blows up the gap between a top float
+% and the body text below it. Allow pages to end where they end.
+\raggedbottom
+
 % --- Packages ----------------------------------------------------------
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -31,6 +37,18 @@
 \usepackage{hyperref}
 \usepackage{url}
 \usepackage{enumitem}
+
+% flafter: prevents floats from appearing before their declaration
+% point in the source. Without this, a [t] figure can climb backward
+% onto a page whose top is occupied by text that comes AFTER the
+% figure's declaration --- e.g. the pipeline figure in S3 climbing
+% onto a page whose top is the tail of S2.
+\usepackage{flafter}
+
+% float: adds the [H] placement specifier (force exact position, no
+% floating). Used by \figplaceholderwide for the pipeline diagram so
+% it sits right below the pipeline-overview subsection.
+\usepackage{float}
 
 % CJK rendering (pdflatex path). Wrap CJK content in
 % \begin{CJK*}{UTF8}{gbsn} ... \end{CJK*}.
@@ -48,11 +66,36 @@
 }
 
 % --- Figure placeholder macro ------------------------------------------
-% Renders the file if it exists (PDF preferred, then PNG), otherwise a
-% visible framed box so the LaTeX compiles before real images arrive.
+% Renders the file if it exists (PDF preferred, then PNG, then JPG),
+% otherwise a visible framed box so the LaTeX compiles before real
+% images arrive.
 % Usage: \figplaceholder{filename}{width}{caption}{label}
 \newcommand{\figplaceholder}[4]{%
-  \begin{figure}[t]
+  \begin{figure}[H]
+    \centering
+    \IfFileExists{figures/#1.pdf}%
+      {\includegraphics[width=#2]{figures/#1.pdf}}%
+      {\IfFileExists{figures/#1.png}%
+        {\includegraphics[width=#2]{figures/#1.png}}%
+        {\IfFileExists{figures/#1.jpg}%
+          {\includegraphics[width=#2]{figures/#1.jpg}}%
+          {\fbox{\parbox{#2}{\vspace{1.0cm}\centering%
+            {\itshape\bfseries PLACEHOLDER: \path{figures/#1}}\par
+            \medskip
+            {\itshape (Figure to be inserted --- see caption below.)}\par
+            \vspace{1.0cm}}}}}}%
+    \caption{#3}
+    \label{#4}
+  \end{figure}}
+
+% Non-floating variant: fixes the figure at its exact source position
+% (via [H] from the float package). Used for the pipeline diagram so
+% it anchors right under the Pipeline Overview subsection rather than
+% drifting into a later subsection. Uses `figure` rather than
+% `figure*` because [H] does not combine with `figure*`; in a
+% single-column document the two are equivalent anyway.
+\newcommand{\figplaceholderwide}[4]{%
+  \begin{figure}[H]
     \centering
     \IfFileExists{figures/#1.pdf}%
       {\includegraphics[width=#2]{figures/#1.pdf}}%
@@ -66,23 +109,6 @@
     \caption{#3}
     \label{#4}
   \end{figure}}
-
-% Same for double-width figures (figure*) when we need them.
-\newcommand{\figplaceholderwide}[4]{%
-  \begin{figure*}[t]
-    \centering
-    \IfFileExists{figures/#1.pdf}%
-      {\includegraphics[width=#2]{figures/#1.pdf}}%
-      {\IfFileExists{figures/#1.png}%
-        {\includegraphics[width=#2]{figures/#1.png}}%
-        {\fbox{\parbox{#2}{\vspace{1.0cm}\centering%
-          {\itshape\bfseries PLACEHOLDER: \path{figures/#1}}\par
-          \medskip
-          {\itshape (Figure to be inserted --- see caption below.)}\par
-          \vspace{1.0cm}}}}}%
-    \caption{#3}
-    \label{#4}
-  \end{figure*}}
 
 % --- Title, authors ----------------------------------------------------
 \title{Cross-Language Scene Text Replacement\\

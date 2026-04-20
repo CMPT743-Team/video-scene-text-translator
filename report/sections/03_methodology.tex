@@ -57,17 +57,6 @@ lighting correction and a per-frame blur prediction. Stage~5 (S5)
 warps each adapted ROI back to the frame's perspective via the
 inverse homography and composites it into the original frame.
 
-\figplaceholderwide{pipeline}{\linewidth}%
-  {Five-stage pipeline for cross-language scene text replacement.
-   S1 detects, tracks, translates, and selects one reference frame
-   per track; S2 computes and refines a homography to canonical
-   frontal space; S3 runs the reference frame's canonical ROI
-   through a text-editing model; S4 adapts the edited ROI to every
-   other frame via a lighting correction module and our Blur
-   Prediction Network; S5 warps each adapted ROI back to the
-   original perspective and composites it into the frame.}%
-  {fig:pipeline}
-
 The system is organized around a single central dataclass,
 \texttt{TextTrack}, that carries all per-track state through the
 pipeline; each stage enriches this object rather than producing
@@ -85,6 +74,17 @@ subsections (\ref{sec:method:bpn} and~\ref{sec:method:refiner})
 below. The remaining five ML models (PaddleOCR, CoTracker3,
 AnyText2, SRNet, and Hi-SAM) are pretrained and used without
 modification.
+
+\figplaceholderwide{pipeline}{\linewidth}%
+  {Five-stage pipeline for cross-language scene text replacement.
+   S1 detects, tracks, translates, and selects one reference frame
+   per track; S2 computes and refines a homography to canonical
+   frontal space; S3 runs the reference frame's canonical ROI
+   through a text-editing model; S4 adapts the edited ROI to every
+   other frame via a lighting correction module and our Blur
+   Prediction Network; S5 warps each adapted ROI back to the
+   original perspective and composites it into the frame.}%
+  {fig:pipeline}
 
 \subsection{Stage 1: Detection, tracking, translation, and reference selection}
 \label{sec:method:s1}
@@ -247,6 +247,19 @@ carrying the adapted pixels and a feathered alpha mask that is
 approximately~$1$ in the interior and falls smoothly to~$0$ over
 the outer $10\%$ of each dimension. The feathering ensures that
 downstream compositing does not produce visible seams.
+Figure~\ref{fig:lcm} shows the end-to-end effect of LCM on a
+sequence of frames with varying illumination.
+
+\figplaceholder{lcm-result}{0.55\linewidth}%
+  {Lighting Correction Module preserves spatially-varying source
+   illumination through translation. Each row shows the English
+   source frame (left) and its Spanish translation rendered by the
+   full pipeline (right). Lighting conditions vary from row to row
+   (hand-cast shadows, directional indoor light, diffuse ambient);
+   the per-pixel ratio map derived from the inpainted background
+   carries the source illumination onto the edited glyph surface
+   in each case.}%
+  {fig:lcm}
 
 \subsection{Stage 5: Revert and Compositing}
 \label{sec:method:s5}
@@ -363,6 +376,19 @@ signal the network sees at training time matches the signal it
 will see at inference time, with the refiner's contribution
 absorbed as an alignment prior rather than an additional source of
 pixel-level noise.
+Figure~\ref{fig:bpn:training} visualizes the BPN's behaviour on
+evaluation tracks.
+
+\figplaceholder{bpn}{\linewidth}%
+  {BPN training behaviour on two evaluation tracks (GREEN, Coffee).
+   Each row shows, from left to right, the Reference canonical ROI
+   (the sharp input), the Target frame (the actual blurred target),
+   the Predicted output produced by rendering the Reference through
+   the BPN-predicted blur kernel, and the $3\times$-amplified
+   residual between Target and Predicted. Low-amplitude residuals
+   indicate that the predicted parameters reproduce the target's
+   per-frame blur.}%
+  {fig:bpn:training}
 
 \subsection{Alignment Refiner}
 \label{sec:method:refiner}
@@ -430,6 +456,18 @@ back to the unrefined baseline homography. We additionally log at
 \texttt{INFO} when at least $10\%$ of a track's predictions
 trigger the rejection gate, which functions as an early warning
 that the reference frame is an outlier for that track.
+Figure~\ref{fig:refiner:training} visualizes alignment before and
+after the learned residual correction.
+
+\figplaceholder{refiner-network}{0.55\linewidth}%
+  {Alignment Refiner training behaviour. Each cell overlays the
+   reference and target canonical ROIs into the red and green
+   channels of a single image. Residual colour separation indicates
+   pixel-level misalignment left by the classical homography fit;
+   after applying the Refiner's predicted $\Delta H$ the channels
+   fuse toward yellow, showing that per-frame drift has been
+   corrected into the shared canonical space.}%
+  {fig:refiner:training}
 
 \subsection{Inpainter backends}
 \label{sec:method:inpainter}
@@ -450,10 +488,12 @@ Table~\ref{tab:inpainter}. Each call site instantiates its
 inpainter independently, so the three can use different backends
 or different configurations without affecting one another.
 
-\begin{table}[t]
+\begin{table}[H]
   \centering
   \caption{Inpainter backend tradeoffs.}
   \label{tab:inpainter}
+  \small
+  \setlength{\tabcolsep}{4pt}
   \begin{tabular}{lp{0.28\linewidth}p{0.38\linewidth}}
     \toprule
     & SRNet & Hi-SAM + NS inpaint \\
@@ -479,36 +519,14 @@ or different configurations without affecting one another.
   \end{tabular}
 \end{table}
 
-\subsection{Method summary}
-\label{sec:method:summary}
+Figure~\ref{fig:inpaint} compares the two backends qualitatively on
+a representative ROI.
 
-The methodology above rests on three design choices that together
-produce the pipeline's core properties.
+\figplaceholder{inpainting}{\linewidth}%
+  {Inpainter backend comparison on the source word ``SHIRTS''. Top
+   row: SRNet, the original learned text-removal network, which
+   occasionally leaves faint glyph residue. Bottom row: our default
+   Hi-SAM stroke segmentation followed by Navier--Stokes inpainting,
+   producing a cleaner fill for the compositing step.}%
+  {fig:inpaint}
 
-\begin{itemize}[leftmargin=*]
-  \item \textbf{Explicit geometric normalization.} Frontalizing
-    every detection into a shared canonical rectangle decouples
-    text editing from perspective distortion, and the learned
-    Alignment Refiner absorbs the small remaining misalignment
-    that optical-flow trackers leave. All downstream stages
-    therefore operate in a pixel-aligned canonical space.
-  \item \textbf{Stage-wise decomposition.} Text generation happens
-    once per track on a single high-quality reference frame;
-    propagation to every other frame is an
-    appearance-adaptation problem (lighting and blur) rather than
-    a re-editing problem. This avoids the per-frame inference
-    cost of generative video editors and removes a major source
-    of temporal flicker.
-  \item \textbf{Appearance-aware propagation.} The Lighting
-    Correction Module handles spatially-varying illumination via
-    per-pixel ratio maps computed on inpainted backgrounds;
-    the Blur Prediction Network handles per-frame motion and
-    focus blur via a compact learned predictor. The two target
-    complementary axes of appearance variation.
-\end{itemize}
-
-Together, this decomposition produces temporally consistent
-cross-language scene text replacement without per-frame generative
-inference, while keeping every intermediate representation
-(canonical ROIs, homography matrices, lighting ratio maps, blur
-parameters) inspectable and individually controllable.
