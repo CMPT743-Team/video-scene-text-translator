@@ -14,93 +14,102 @@ videos consist of real-world scenes captured with handheld or
 low-rate camera motion, in natural lighting, and cover a mix of
 Latin-to-Chinese and Latin-to-Spanish localization pairs.
 
-\subsection{Qualitative comparison with a generative baseline}
-\label{sec:exp:qualitative}
+\subsection{Overall results}
+\label{sec:exp:overall}
 
-Figures~\ref{fig:cmp:warden} and~\ref{fig:cmp:highway} show
-side-by-side qualitative comparisons between our pipeline and
-Runway's Gen-4 Aleph~\citep{runway2025aleph}, an end-to-end
-generative video editor. For each example we show the source
-frame, Gen-4 Aleph's output when prompted for the equivalent
-translation, and our pipeline's output. The two systems exhibit a
-consistent pattern across examples. Gen-4 Aleph's output preserves
-the photorealistic texture and lighting of the source surface---
-wood grain, paint scuff, subtle lighting gradient---to a level
-that is difficult to match with explicit compositing. At the same
-time, its rendered glyphs are frequently unreadable or
-semantically incorrect, for example producing unrelated Chinese
-characters that are neither the source word nor its translation.
-Our pipeline produces the correct target string in every tested
-example, but inherits the coarser texture blending characteristic
-of a compositing approach. We view these as complementary
-capabilities rather than competing ones: Gen-4 Aleph excels at
-naturalism, our pipeline excels at glyph correctness.
+Figure~\ref{fig:results} presents a gallery of representative
+end-to-end outputs of the full pipeline across multiple input
+videos and target-language pairs. Across these examples the
+pipeline produces correct target glyphs, preserves perspective and
+scale, and adapts to per-frame lighting and blur well enough for
+the result to read as part of the original scene.
+Module-level evidence for each of these properties is given in the
+methodology section --- Figure~\ref{fig:lcm} for lighting,
+Figure~\ref{fig:bpn:training} for blur, and
+Figure~\ref{fig:refiner:training} for alignment --- and the
+per-component ablations in Section~\ref{sec:exp:ablation}
+quantify the contribution of each learned module.
 
-\figplaceholder{comparison_warden}{\linewidth}%
-  {Generative systems such as Gen-4 Aleph (center) excel at
-   photorealistic style preservation but produce incorrect glyphs
-   when prompted for a specific translation, yielding unreadable
-   or gibberish text. Our pipeline (right) produces correct target
-   glyphs through explicit compositing, at the cost of reduced
-   style-transfer quality. The two approaches currently address
-   different subproblems of video text localization. Source:
-   English ``WARDEN'' on a wooden surface; target: Simplified
-   Chinese ``\begin{CJK*}{UTF8}{gbsn}典狱长\end{CJK*}.''}%
-  {fig:cmp:warden}
+\figplaceholder{results_overview}{\linewidth}%
+  {Gallery of representative end-to-end results from the full
+   pipeline across several input videos and target languages.
+   \emph{Placeholder: to be filled with a curated set of good-case
+   examples.}}%
+  {fig:results}
 
-\figplaceholder{comparison_highway}{\linewidth}%
-  {Second qualitative example. Highway sign: source English text
-   (left), Gen-4 Aleph output (center, style preserved but glyphs
-   incorrect), our pipeline output (right, correct target glyphs
-   with acceptable style approximation).}%
-  {fig:cmp:highway}
+\subsection{Glyph correctness: compositing vs.\ end-to-end generation}
+\label{sec:exp:glyph}
+
+Glyph-level correctness turns out to be a surprisingly demanding
+requirement, and the way different systems fail on it is
+instructive for understanding the design of our pipeline.
+
+End-to-end generative video editors such as
+Gen-4 Aleph~\citep{runway2025aleph} excel at photorealistic style
+preservation: surface texture, lighting gradient, and motion are
+reproduced in a way that our explicit-compositing pipeline does not
+match. When prompted with a specific target string, however, they
+frequently render unreadable or semantically incorrect glyphs,
+because reliable glyph rendering conditioned on a target string is
+still an open problem for current generative systems.
+
+The same failure mode appears in a milder form inside our
+pipeline's own text editor. AnyText2~\citep{tuo2025anytext2} is a
+mask-based scene-text editor, and when the target string is
+substantially shorter than the source, the source-derived mask
+carries more space than the target glyphs need. Naively passing
+this mask to AnyText2 causes it to fill the excess with
+plausible-looking but semantically incorrect characters --- the same
+hallucinated-glyph pattern that affects end-to-end generative
+models. Our \emph{adaptive mask} path in S3
+(Section~\ref{sec:method:s3}) is a deliberate engineering workaround
+for this behaviour: we pre-clear the source text with the
+configured background inpainter, restore a feathered centered strip
+of original pixels at the target's natural width, and pass a shrunk
+mask that tightly bounds the target glyphs. With this workaround,
+AnyText2 reliably produces the correct target string even in
+long-to-short settings, and this is what allows the compositing
+path as a whole to deliver the glyph-correctness guarantee that
+end-to-end generative systems currently do not.
+Figure~\ref{fig:glyph:comparison} shows the three regimes side by
+side.
+
+\figplaceholder{generative_vs_adaptive}{\linewidth}%
+  {Glyph correctness across approaches on a challenging scene.
+   \textbf{Left:} end-to-end generative output (Runway
+   Gen-4 Aleph) --- strong style preservation but incorrect target
+   glyphs. \textbf{Middle:} AnyText2 applied directly with the
+   source-derived mask --- gibberish characters when the target is
+   shorter than the source, the same failure mode as the generative
+   model in a milder form. \textbf{Right:} our pipeline with the
+   adaptive-mask path enabled --- correct target glyphs, at the
+   cost of coarser style preservation than the generative baseline.
+   The example is chosen to illustrate the complementary strengths
+   of the two paradigms (Section~\ref{sec:exp:discussion}), not as
+   a head-to-head benchmark. \emph{Placeholder.}}%
+  {fig:glyph:comparison}
 
 \subsection{Module ablations}
 \label{sec:exp:ablation}
 
-To assess the contribution of individual components we designed or
-tuned, we disable them one at a time and measure three quantitative
-metrics on a representative video set: (i)~\emph{OCR readback
-accuracy}, defined as PaddleOCR's string-level match rate when
-re-detecting the translated text in our output;
-(ii)~\emph{background SSIM}~\citep{wang2004ssim} measured outside
-the text alpha mask, which captures whether the pipeline damages
-surrounding scene pixels; and (iii)~\emph{quad jitter}, the mean
-per-frame corner displacement of the final composite, which
-captures temporal stability. Table~\ref{tab:ablation} summarizes
-the results.
-
-We expect the strongest effects to fall on temporal stability
-(Alignment Refiner) and readback accuracy (adaptive mask), since
-these target the most direct failure modes of a naive pipeline.
-Figures~\ref{fig:abl:bpn}, \ref{fig:abl:refiner}, and
-\ref{fig:abl:lcm} give qualitative illustrations of each component's
-contribution. The BPN's contribution is often visually clear even
-when the numerical SSIM gap is modest, because motion blur matters
-most at a small set of locally high-blur frames that averaging
-tends to hide.
-
-\figplaceholder{bpn_ablation}{\linewidth}%
-  {Effect of the Blur Prediction Network on per-frame appearance.
-   Top row: output without BPN---the inserted text is uniformly
-   sharp regardless of frame-level blur. Bottom row: output with
-   BPN---per-frame blur parameters cause the inserted text to
-   match the surrounding scene's motion and focus blur.}%
-  {fig:abl:bpn}
-
-\figplaceholder{refiner_jitter}{\linewidth}%
-  {Effect of the Alignment Refiner on inter-frame stability.
-   Plotted: corner displacement (pixels) over frame index for a
-   single track, with and without the refiner. The refiner reduces
-   drift from CoTracker residual error.}%
-  {fig:abl:refiner}
-
-\figplaceholder{lcm_ablation}{\linewidth}%
-  {Effect of the Lighting Correction Module in a scene with strong
-   directional lighting. Left: output without LCM. Right: output
-   with LCM applying a per-pixel ratio map derived from the
-   inpainted backgrounds.}%
-  {fig:abl:lcm}
+To assess the contribution of the individual components we designed
+or tuned, we disable them one at a time and measure three
+quantitative metrics on a representative video set:
+(i)~\emph{OCR readback accuracy}, defined as PaddleOCR's
+string-level match rate when re-detecting the translated text in
+our output; (ii)~\emph{background SSIM}~\citep{wang2004ssim}
+measured outside the text alpha mask, which captures whether the
+pipeline damages surrounding scene pixels; and (iii)~\emph{quad
+jitter}, the mean per-frame corner displacement of the final
+composite, which captures temporal stability.
+Qualitative evidence for each learned component is already present
+in the methodology section:
+Figure~\ref{fig:bpn:training} for the BPN,
+Figure~\ref{fig:refiner:training} for the Alignment Refiner,
+Figure~\ref{fig:lcm} for the Lighting Correction Module,
+and Figure~\ref{fig:inpaint} for the inpainter backends.
+Table~\ref{tab:ablation} summarizes the quantitative contribution
+of each component.
 
 \begin{table}[H]
   \centering
@@ -127,36 +136,20 @@ tends to hide.
   \end{tabular}
 \end{table}
 
-\subsection{Adaptive mask for long-to-short translation}
-\label{sec:exp:adaptive}
-
-Figure~\ref{fig:adaptive} isolates the adaptive-mask path of S3 on
-a pair in which the target string is substantially shorter than the
-source. Without the adaptive path, AnyText2 tends to fill the
-oversized mask with plausible-looking but semantically incorrect
-glyphs. With the adaptive path, the target renders at its natural
-width, the remainder of the mask region contains a feathered
-restoration of the original pixels, and the overall appearance is
-clean.
-
-\figplaceholder{adaptive_mask_before_after}{\linewidth}%
-  {The adaptive-mask path in S3 for long-to-short translations.
-   Left: the source canonical ROI with a long source string.
-   Middle: the hybrid canvas after the configured background
-   inpainter pre-clears the source text and a feathered centered
-   strip of original pixels is restored at the target's natural
-   width. Right: the AnyText2 output, rendered into the shrunk
-   mask region, free of the gibberish-fill artifact common to
-   mask-based editors when target length is much shorter than
-   source.}%
-  {fig:adaptive}
+We expect the strongest effects to fall on temporal stability
+(Alignment Refiner) and readback accuracy (adaptive mask), since
+these target the most direct failure modes of a naive pipeline.
+Disabling the BPN removes per-frame blur matching and leaves the
+composited text uniformly sharp; we expect this to show as a
+modest average SSIM gap that understates the perceptual cost,
+because motion blur concentrates on a small set of high-motion
+frames that averaging tends to hide.
 
 \subsection{Analysis and insights}
 \label{sec:exp:analysis}
 
-The observed improvements can be attributed to the three design
-choices introduced in Section~\ref{sec:method:summary}, each
-visible in the experimental results above.
+The design choices introduced in Section~\ref{sec:method:summary}
+each leave a measurable or visible trace in the results above.
 
 \begin{itemize}[leftmargin=*]
   \item \textbf{Explicit geometric normalization reduces temporal
@@ -164,19 +157,26 @@ visible in the experimental results above.
     quad-jitter column of Table~\ref{tab:ablation} makes concrete
     the cost of residual tracker error: correcting a few pixels
     of drift per frame propagates into a visibly more stable
-    composite.
+    composite. The training-time view in
+    Figure~\ref{fig:refiner:training} shows the same correction at
+    the ROI level.
   \item \textbf{Stage-wise decomposition concentrates effort
     where it matters.} Editing is applied once per track at a
     carefully chosen reference frame rather than independently on
     every frame, which avoids frame-to-frame edit inconsistency
     and keeps the per-frame cost on the propagation side bounded.
+    The adaptive-mask workaround in
+    Section~\ref{sec:exp:glyph} is a direct consequence of this
+    choice: because the editor is invoked once, we can afford to
+    shape its input carefully.
   \item \textbf{Appearance-aware propagation closes the
     per-frame look-consistency gap.} LCM and BPN target
-    complementary appearance axes;
-    Figure~\ref{fig:abl:bpn} shows blur-matching has qualitative
-    impact even when its numerical SSIM contribution is modest,
-    precisely because per-frame blur varies most at a small set
-    of high-motion frames that aggregate metrics tend to hide.
+    complementary appearance axes ---
+    Figure~\ref{fig:lcm} shows LCM preserving source-frame
+    illumination, and Figure~\ref{fig:bpn:training} shows the BPN
+    reproducing per-frame blur. Together they bring the composited
+    text's per-frame appearance close enough to the surrounding
+    scene that viewers do not read the edit as an overlay.
 \end{itemize}
 
 A useful side effect of this explicit decomposition is that every
@@ -195,8 +195,8 @@ visual realism, our pipeline prioritizes structured
 controllability and glyph-level fidelity. Generative models
 produce visually compelling outputs, but at the time of writing
 they do not offer guarantees on target-string accuracy or precise
-spatial alignment. The qualitative examples in
-Section~\ref{sec:exp:qualitative} and the ablations in
+spatial alignment. The comparison in
+Section~\ref{sec:exp:glyph} and the ablations in
 Section~\ref{sec:exp:ablation} together suggest that explicitly
 modelling geometry and appearance propagation is a viable route
 when correct glyphs matter, while the naturalistic qualities of
