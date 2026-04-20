@@ -417,6 +417,7 @@ def _build_config(
     _FIELDS = (
         ("detection", "cotracker_checkpoint"),
         ("detection", "cotracker_online_checkpoint"),
+        ("frontalization", "refiner_checkpoint_path"),
         ("propagation", "inpainter_checkpoint_path"),
         ("propagation", "bpn_checkpoint_path"),
         ("revert", "pre_inpaint_checkpoint"),
@@ -432,21 +433,25 @@ def _build_config(
             _resolve_checkpoint_path(getattr(section, field_name)),
         )
 
-    # S5 alignment refiner is optional and its checkpoint is not shipped with
-    # the repo. Disable it if the resolved path doesn't exist so the pipeline
-    # runs without the refiner rather than crashing at load time.
-    revert = getattr(config, "revert", None)
-    if (
-        revert is not None
-        and getattr(revert, "use_refiner", False)
-        and getattr(revert, "refiner_checkpoint_path", None)
-        and not Path(revert.refiner_checkpoint_path).exists()
-    ):
-        logger.warning(
-            "revert.refiner_checkpoint_path missing (%s); disabling refiner",
-            revert.refiner_checkpoint_path,
-        )
-        revert.use_refiner = False
+    # Alignment refiners (S2 + S5) are optional and their checkpoint is not
+    # shipped with the repo. Disable each if its resolved path doesn't exist,
+    # so the pipeline runs without that refiner rather than retrying a
+    # failing torch.load on every call. S2's flood of 144× load failures
+    # (tracked to this branch) is what motivated bringing S2 under this
+    # guard alongside S5.
+    for section_name in ("frontalization", "revert"):
+        section = getattr(config, section_name, None)
+        if (
+            section is not None
+            and getattr(section, "use_refiner", False)
+            and getattr(section, "refiner_checkpoint_path", None)
+            and not Path(section.refiner_checkpoint_path).exists()
+        ):
+            logger.warning(
+                "%s.refiner_checkpoint_path missing (%s); disabling refiner",
+                section_name, section.refiner_checkpoint_path,
+            )
+            section.use_refiner = False
 
     return config
 
