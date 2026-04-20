@@ -196,7 +196,7 @@ sections.
 - [x] Plan written and approved
 - [x] Step 1 — Read full codebase + git log + sessions; write
       `content_brief.md`
-- [ ] Step 2 — Get user sign-off on `content_brief.md`
+- [x] Step 2 — Get user sign-off on `content_brief.md` (approved 2026-04-19)
 - [x] Step 3 — Scaffold LaTeX project (style + skeleton + bib stubs +
       build files)
 - [x] Step 4 — Drop in pipeline figure + hero placeholder + result
