@@ -1,0 +1,10 @@
+# latexmk configuration for the final report.
+# Build:  latexmk -pdf
+# Clean:  latexmk -C
+# Watch:  latexmk -pdf -pvc
+
+$pdf_mode = 1;          # use pdflatex
+$pdflatex = 'pdflatex -synctex=1 -interaction=nonstopmode -file-line-error %O %S';
+$bibtex_use = 2;        # always run bibtex
+$out_dir = '.';         # build artifacts in same directory (gitignored)
+@default_files = ('main.tex');
