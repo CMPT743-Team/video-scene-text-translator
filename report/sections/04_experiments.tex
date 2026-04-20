@@ -29,10 +29,11 @@ Figure~\ref{fig:bpn:training} for blur, and
 Figure~\ref{fig:refiner:training} for alignment.
 
 \figplaceholder{results_overview}{\linewidth}%
-  {Gallery of representative end-to-end results from the full
-   pipeline across several input videos and target languages.
-   \emph{Placeholder: to be filled with a curated set of good-case
-   examples.}}%
+  {Representative end-to-end results, English source to Simplified
+   Chinese. For each example the top row shows sampled source
+   frames and the bottom row the corresponding pipeline outputs.
+   The handheld PS5 case (top strip) shows strong per-frame motion
+   blur matched by the BPN.}%
   {fig:results}
 
 \subsection{Glyph correctness: compositing vs.\ end-to-end generation}
@@ -69,22 +70,29 @@ AnyText2 reliably produces the correct target string even in
 long-to-short settings, and this is what allows the compositing
 path as a whole to deliver the glyph-correctness guarantee that
 end-to-end generative systems currently do not.
-Figure~\ref{fig:glyph:comparison} shows the three regimes side by
-side.
+Figure~\ref{fig:glyph:comparison} shows a source frame (left), the
+Runway Gen-4 Aleph output (middle), and our pipeline's output
+(right) on a scene where the source ``WARDEN'' is translated into
+Simplified Chinese.
 
 \figplaceholder{generative_vs_adaptive}{\linewidth}%
-  {Glyph correctness across approaches on a challenging scene.
-   \textbf{Left:} end-to-end generative output (Runway
-   Gen-4 Aleph) --- strong style preservation but incorrect target
-   glyphs. \textbf{Middle:} AnyText2 applied directly with the
-   source-derived mask --- gibberish characters when the target is
-   shorter than the source, the same failure mode as the generative
-   model in a milder form. \textbf{Right:} our pipeline with the
-   adaptive-mask path enabled --- correct target glyphs, at the
-   cost of coarser style preservation than the generative baseline.
+  {Comparison on a wooden-surface scene with an English source
+   word.
+   \textbf{Left:} source frame with the English word ``WARDEN''.
+   \textbf{Middle:} Runway Gen-4 Aleph's output when prompted for
+   the Simplified Chinese translation --- the wood grain, surface
+   lighting, and rotation of the original plank are preserved at a
+   quality that explicit compositing does not currently match, but
+   the rendered CJK glyphs are neither the source word nor its
+   intended translation.
+   \textbf{Right:} our pipeline's output ---
+   ``\begin{CJK*}{UTF8}{gbsn}典狱长\end{CJK*}'', the correct
+   target string, rendered in place of ``WARDEN'' with a style
+   match that approximates but does not reach Gen-4 Aleph's
+   naturalism.
    The example is chosen to illustrate the complementary strengths
    of the two paradigms (Section~\ref{sec:exp:discussion}), not as
-   a head-to-head benchmark. \emph{Placeholder.}}%
+   a head-to-head benchmark.}%
   {fig:glyph:comparison}
 
 \subsection{Analysis and insights}
