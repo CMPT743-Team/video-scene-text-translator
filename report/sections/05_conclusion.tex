@@ -33,20 +33,27 @@ in the pipeline, and the nature of our own involvement with it.
   \centering
   \caption{Models in the pipeline and our involvement with each.}
   \label{tab:involvement}
-  \small
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{lll}
+  \begin{tabular}{llp{0.4\linewidth}}
     \toprule
     Model & Stage & Our involvement \\
     \midrule
-    PaddleOCR (PP-OCRv4) & S1 detection       & Pre-trained, used as is \\
-    CoTracker3           & S1 tracking        & Pre-trained, used as is \\
-    AnyText2             & S3 text editing    & Pre-trained, used as is (Gradio server) \\
-    SRNet                & S3/S4/S5 inpainting & Pre-trained, used as is \\
-    Hi-SAM               & S3/S4/S5 inpainting & Pre-trained, used as is (default backend) \\
-    LCM                  & S4 lighting        & Reimplementation of STRIVE's algorithm \\
-    \textbf{BPN}         & S4 blur prediction & \textbf{Reimplementation of STRIVE's network}, trained on our S2-aligned data \\
-    \textbf{Alignment Refiner} & S2 drift correction & \textbf{Designed and trained from scratch} \\
+    PaddleOCR (PP-OCRv4)       & S1 detection
+        & Pre-trained, used as is \\
+    CoTracker3                 & S1 tracking
+        & Pre-trained, used as is \\
+    AnyText2                   & S3 text editing
+        & Pre-trained, used as is (Gradio server) \\
+    SRNet                      & S3/S4/S5 inpainting
+        & Pre-trained, used as is \\
+    Hi-SAM                     & S3/S4/S5 inpainting
+        & Pre-trained, used as is (default backend) \\
+    LCM                        & S4 lighting
+        & Reimplementation of STRIVE's algorithm \\
+    \textbf{BPN}               & S4 blur prediction
+        & \textbf{Reimplementation of STRIVE's network}, trained on
+          our S2-aligned data \\
+    \textbf{Alignment Refiner} & S2 drift correction
+        & \textbf{Designed and trained from scratch} \\
     \bottomrule
   \end{tabular}
 \end{table}
