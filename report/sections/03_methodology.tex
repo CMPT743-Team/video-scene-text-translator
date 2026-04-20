@@ -57,17 +57,6 @@ lighting correction and a per-frame blur prediction. Stage~5 (S5)
 warps each adapted ROI back to the frame's perspective via the
 inverse homography and composites it into the original frame.
 
-\figplaceholderwide{pipeline}{\linewidth}%
-  {Five-stage pipeline for cross-language scene text replacement.
-   S1 detects, tracks, translates, and selects one reference frame
-   per track; S2 computes and refines a homography to canonical
-   frontal space; S3 runs the reference frame's canonical ROI
-   through a text-editing model; S4 adapts the edited ROI to every
-   other frame via a lighting correction module and our Blur
-   Prediction Network; S5 warps each adapted ROI back to the
-   original perspective and composites it into the frame.}%
-  {fig:pipeline}
-
 The system is organized around a single central dataclass,
 \texttt{TextTrack}, that carries all per-track state through the
 pipeline; each stage enriches this object rather than producing
@@ -85,6 +74,17 @@ subsections (\ref{sec:method:bpn} and~\ref{sec:method:refiner})
 below. The remaining five ML models (PaddleOCR, CoTracker3,
 AnyText2, SRNet, and Hi-SAM) are pretrained and used without
 modification.
+
+\figplaceholderwide{pipeline}{\linewidth}%
+  {Five-stage pipeline for cross-language scene text replacement.
+   S1 detects, tracks, translates, and selects one reference frame
+   per track; S2 computes and refines a homography to canonical
+   frontal space; S3 runs the reference frame's canonical ROI
+   through a text-editing model; S4 adapts the edited ROI to every
+   other frame via a lighting correction module and our Blur
+   Prediction Network; S5 warps each adapted ROI back to the
+   original perspective and composites it into the frame.}%
+  {fig:pipeline}
 
 \subsection{Stage 1: Detection, tracking, translation, and reference selection}
 \label{sec:method:s1}
