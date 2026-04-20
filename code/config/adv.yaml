@@ -8,6 +8,7 @@ debug_output_dir: null
 
 detection:
   ocr_backend: "paddleocr"  # "easyocr" or "paddleocr"
+  #ocr_languages: ["ch"]
   ocr_languages: ["en"]
   ocr_confidence_threshold: 0.9
   min_text_area: 100
@@ -53,7 +54,9 @@ detection:
 
 translation:
   source_lang: "en"
+  #source_lang: "zh-CN"
   target_lang: "zh-CN"
+  #target_lang: "en"
   backend: "deep-translator"
   api_key: null
 
