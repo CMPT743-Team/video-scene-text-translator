@@ -64,9 +64,10 @@ The generative paradigm---Sora~\citep{openai2024sora},
 Gen-4~Aleph~\citep{runway2025aleph}, and their successors---
 currently achieves superior style preservation and is likely to
 dominate the space as glyph control in those systems matures.
-Until that happens, modular pipelines like ours offer the
-predictable correctness that end-to-end generative models cannot
-yet guarantee. An honest positioning of our work is therefore as a
+Until that happens, modular pipelines like ours offer explicit
+character-level control over the replacement string that
+end-to-end generative models cannot yet match, even though the
+final rendered glyphs still depend on the text-editing backend. An honest positioning of our work is therefore as a
 reference implementation of one side of this tradeoff and a
 starting point for future hybrid systems, rather than as a direct
 competitor.

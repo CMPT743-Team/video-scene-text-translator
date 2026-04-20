@@ -44,8 +44,13 @@ systems for predictable control over what text appears on screen.
 Our work occupies the second paradigm. We present a prototype system
 for cross-language scene text replacement that takes as input a
 source-language video and a target language, and produces a video
-with the same content but with all detected scene text replaced by
-correct translations. The system is structured as a five-stage
+in which all detected scene text is replaced by its target-language
+translation. The target string is supplied to the text-editing
+model as an explicit input, so the intended output is controlled at
+the character level at every step of the pipeline; the fidelity of
+the final rendered glyphs is bounded by the underlying editor, which
+we discuss in Section~\ref{sec:exp:limits}. The system is structured
+as a five-stage
 pipeline integrating seven machine-learning models, of which two we
 implemented and trained ourselves: an Alignment Refiner of our own
 design that addresses residual tracking error in the compositing
@@ -66,8 +71,8 @@ glyph-controlled paradigm rather than a competitor to end-to-end
 generative video editing. The generative paradigm is currently
 winning on style and is likely to dominate as glyph control matures
 in those systems; until then, modular pipelines such as ours offer
-the predictable correctness that end-to-end generative models cannot
-yet guarantee. The two approaches are complementary, and we expect
+explicit character-level control over the replacement string that
+end-to-end generative models cannot yet match. The two approaches are complementary, and we expect
 that hybrid systems combining generative style with glyph-controlled
 compositing are the most promising long-term direction.
 

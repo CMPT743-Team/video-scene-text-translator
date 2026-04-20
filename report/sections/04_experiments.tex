@@ -30,18 +30,24 @@ that is difficult to match with explicit compositing. At the same
 time, its rendered glyphs are frequently unreadable or
 semantically incorrect, for example producing unrelated Chinese
 characters that are neither the source word nor its translation.
-Our pipeline produces the correct target string in every tested
-example, but inherits the coarser texture blending characteristic
-of a compositing approach. We view these as complementary
-capabilities rather than competing ones: Gen-4 Aleph excels at
-naturalism, our pipeline excels at glyph correctness.
+Because our pipeline supplies the text-editing model with the
+exact target string as input, the intended text is correct by
+construction in every tested example; the underlying diffusion-
+based editor renders that string faithfully in most cases, though
+glyph artifacts (missing strokes, stylistic drift, distortion at
+small sizes) do appear on harder prompts. The pipeline also
+inherits the coarser texture blending characteristic of a
+compositing approach. We view these as complementary capabilities
+rather than competing ones: Gen-4 Aleph excels at naturalism, our
+pipeline excels at character-level control.
 
 \figplaceholder{comparison_warden}{\linewidth}%
   {Generative systems such as Gen-4 Aleph (center) excel at
    photorealistic style preservation but produce incorrect glyphs
    when prompted for a specific translation, yielding unreadable
-   or gibberish text. Our pipeline (right) produces correct target
-   glyphs through explicit compositing, at the cost of reduced
+   or gibberish text. Our pipeline (right) supplies the target
+   string as explicit input to a text-editing diffusion model and
+   composites the rendered result in place, at the cost of reduced
    style-transfer quality. The two approaches currently address
    different subproblems of video text localization. Source:
    English ``WARDEN'' on a wooden surface; target: Simplified
@@ -51,8 +57,8 @@ naturalism, our pipeline excels at glyph correctness.
 \figplaceholder{comparison_highway}{\linewidth}%
   {Second qualitative example. Highway sign: source English text
    (left), Gen-4 Aleph output (center, style preserved but glyphs
-   incorrect), our pipeline output (right, correct target glyphs
-   with acceptable style approximation).}%
+   incorrect), our pipeline output (right, target string specified
+   explicitly and rendered with acceptable style approximation).}%
   {fig:cmp:highway}
 
 \subsection{Module ablations}
@@ -199,9 +205,9 @@ spatial alignment. The qualitative examples in
 Section~\ref{sec:exp:qualitative} and the ablations in
 Section~\ref{sec:exp:ablation} together suggest that explicitly
 modelling geometry and appearance propagation is a viable route
-when correct glyphs matter, while the naturalistic qualities of
-generative systems remain harder to match with explicit
-compositing. A reasonable reading of these observations is that
+when character-level control over the replacement string matters,
+while the naturalistic qualities of generative systems remain
+harder to match with explicit compositing. A reasonable reading of these observations is that
 the two approaches are complementary rather than competing, and
 that hybrid systems---generative backgrounds and style with
 glyph-controlled text compositing---are a promising long-term
@@ -210,19 +216,30 @@ direction.
 \subsection{Current limitations}
 \label{sec:exp:limits}
 
-Three limitations are worth noting explicitly. The most important
+Four limitations are worth noting explicitly. The most important
 is the \emph{style-transfer gap} against end-to-end generative
-baselines: by design, our pipeline produces correct target glyphs,
-but the resulting texture match is not as naturalistic as Gen-4
-Aleph's. We view this as the fundamental tradeoff of the
-glyph-controlled paradigm. Second, \emph{temporal stability} is
-imperfect even with the Alignment Refiner: homographies are
-estimated per-frame and the refiner predicts per-frame
-independently, which leaves small micro-oscillations in the
-composited corners that are sometimes visible on long clips.
-Third, the adaptive mask's character-class width heuristic is an
-approximation: highly stylized fonts whose glyph widths deviate
-substantially from the heuristic averages can still leave a small
-residual artifact at the mask edges. All three are promising
-directions for future work and do not affect the feasibility
-result.
+baselines: by design, our pipeline retains character-level control
+over the replacement string, but the resulting texture match is
+not as naturalistic as Gen-4 Aleph's. We view this as the
+fundamental tradeoff of the glyph-controlled paradigm. Second,
+\emph{rendering fidelity is bounded by the text-editing backend}:
+the target string is supplied as explicit input to the editor, so
+the intent is correct by construction, but the underlying
+diffusion-based text-editing model can still produce glyph
+artifacts---missing strokes, stylistic drift from the source
+font, or distortion at small sizes---particularly on dense
+scripts or unusual typography. Producing a specific target string
+reliably at the glyph level is itself an open problem for current
+text-editing diffusion models, and our pipeline treats the editor
+as a swappable backend so that this limitation tracks the state of
+the art rather than a design choice of ours. Third,
+\emph{temporal stability} is imperfect even with the Alignment
+Refiner: homographies are estimated per-frame and the refiner
+predicts per-frame independently, which leaves small
+micro-oscillations in the composited corners that are sometimes
+visible on long clips. Fourth, the adaptive mask's character-class
+width heuristic is an approximation: highly stylized fonts whose
+glyph widths deviate substantially from the heuristic averages can
+still leave a small residual artifact at the mask edges. All four
+are promising directions for future work and do not affect the
+feasibility result.
