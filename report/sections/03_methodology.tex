@@ -1,6 +1,40 @@
 \section{Methodology}
 \label{sec:method}
 
+\subsection{Problem formulation}
+\label{sec:method:formulation}
+
+We formulate cross-language scene text replacement in video as a
+structured video-to-video transformation task. Given an input
+video
+\begin{equation}
+  V = \{F_1, F_2, \dots, F_N\}, \quad
+  F_t \in \mathbb{R}^{H \times W \times 3},
+\end{equation}
+we produce an output sequence
+\begin{equation}
+  V' = \{F'_1, F'_2, \dots, F'_N\},
+\end{equation}
+in which all scene text has been translated into a target language
+while preserving geometric consistency, temporal coherence, and
+photorealistic appearance.
+
+We model each distinct text instance in the video as a
+\emph{track}:
+\begin{equation}
+  T_i = \{Q_i^t, s_i, s'_i\}_{t=1}^{N},
+  \label{eq:track}
+\end{equation}
+where $Q_i^t$ is the quadrilateral region of instance $i$ at
+frame $t$ (undefined for frames in which the instance is not
+visible), $s_i$ is the detected source-language string for that
+instance, and $s'_i$ is its translation into the target language.
+The pipeline described in the following subsections takes
+$\{T_i\}$ as its central data structure; each stage enriches every
+track with additional fields---homographies, edited ROIs,
+propagated pixels, alpha masks---until the final compositing stage
+produces $V'$.
+
 \subsection{Pipeline overview}
 \label{sec:method:overview}
 
@@ -370,3 +404,37 @@ affecting one another.
     \bottomrule
   \end{tabular}
 \end{table}
+
+\subsection{Method summary}
+\label{sec:method:summary}
+
+The methodology above rests on three design choices that together
+produce the pipeline's core properties.
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Explicit geometric normalization.} Frontalizing
+    every detection into a shared canonical rectangle decouples
+    text editing from perspective distortion, and the learned
+    Alignment Refiner absorbs the small remaining misalignment
+    that optical-flow trackers leave. All downstream stages
+    therefore operate in a pixel-aligned canonical space.
+  \item \textbf{Stage-wise decomposition.} Text generation happens
+    once per track on a single high-quality reference frame;
+    propagation to every other frame is an
+    appearance-adaptation problem (lighting and blur) rather than
+    a re-editing problem. This avoids the per-frame inference
+    cost of generative video editors and removes a major source
+    of temporal flicker.
+  \item \textbf{Appearance-aware propagation.} The Lighting
+    Correction Module handles spatially-varying illumination via
+    per-pixel ratio maps computed on inpainted backgrounds;
+    the Blur Prediction Network handles per-frame motion and
+    focus blur via a compact learned predictor. The two target
+    complementary axes of appearance variation.
+\end{itemize}
+
+Together, this decomposition produces temporally consistent
+cross-language scene text replacement without per-frame generative
+inference, while keeping every intermediate representation
+(canonical ROIs, homography matrices, lighting ratio maps, blur
+parameters) inspectable and individually controllable.

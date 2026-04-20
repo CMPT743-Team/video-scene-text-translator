@@ -47,22 +47,23 @@ in the pipeline, and the nature of our own involvement with it.
 \subsection{Positioning}
 \label{sec:conclusion:framing}
 
-We view this system as a strong, reproducible, open baseline in the
-glyph-controlled paradigm of video text localization. The
-generative paradigm---Sora~\citep{openai2024sora}, Gen-4
-Aleph~\citep{runway2025aleph}, and their successors---currently
-achieves superior style preservation and is likely to dominate the
-space as glyph control in those systems matures. Until that
-happens, modular pipelines like ours offer the predictable
-correctness that end-to-end generative models cannot yet guarantee.
+Section~\ref{sec:exp:discussion} argued that the two paradigms
+are complementary rather than competing. We view our specific
+contribution as an open, reproducible reference implementation of
+the glyph-controlled paradigm: a full pipeline, two compact
+networks trained from scratch, and configuration knobs that
+expose each module for inspection and extension.
 
-The two approaches are complementary in capability rather than
-competitors for the same problem: generative systems excel at
-naturalistic style; glyph-controlled pipelines excel at
-target-string fidelity. Honest positioning of our work therefore
-frames it as a reference implementation of one side of this
-tradeoff, and as a starting point for future hybrid systems, rather
-than as a direct competitor to end-to-end generative editing.
+The generative paradigm---Sora~\citep{openai2024sora},
+Gen-4~Aleph~\citep{runway2025aleph}, and their successors---
+currently achieves superior style preservation and is likely to
+dominate the space as glyph control in those systems matures.
+Until that happens, modular pipelines like ours offer the
+predictable correctness that end-to-end generative models cannot
+yet guarantee. An honest positioning of our work is therefore as a
+reference implementation of one side of this tradeoff and a
+starting point for future hybrid systems, rather than as a direct
+competitor.
 
 \subsection{Future work}
 \label{sec:conclusion:future}

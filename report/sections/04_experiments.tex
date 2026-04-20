@@ -149,6 +149,62 @@ clean.
    source.}%
   {fig:adaptive}
 
+\subsection{Analysis and insights}
+\label{sec:exp:analysis}
+
+The observed improvements can be attributed to the three design
+choices introduced in Section~\ref{sec:method:summary}, each
+visible in the experimental results above.
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Explicit geometric normalization reduces temporal
+    jitter.} The Alignment Refiner's contribution in the
+    quad-jitter column of Table~\ref{tab:ablation} makes concrete
+    the cost of residual tracker error: correcting a few pixels
+    of drift per frame propagates into a visibly more stable
+    composite.
+  \item \textbf{Stage-wise decomposition concentrates effort
+    where it matters.} Editing is applied once per track at a
+    carefully chosen reference frame rather than independently on
+    every frame, which avoids frame-to-frame edit inconsistency
+    and keeps the per-frame cost on the propagation side bounded.
+  \item \textbf{Appearance-aware propagation closes the
+    per-frame look-consistency gap.} LCM and BPN target
+    complementary appearance axes;
+    Figure~\ref{fig:abl:bpn} shows blur-matching has qualitative
+    impact even when its numerical SSIM contribution is modest,
+    precisely because per-frame blur varies most at a small set
+    of high-motion frames that aggregate metrics tend to hide.
+\end{itemize}
+
+A useful side effect of this explicit decomposition is that every
+intermediate representation---canonical ROIs, homography
+matrices, lighting ratio maps, blur parameters---is inspectable
+and individually controllable, which supports debugging and
+module-level tuning in a way that end-to-end generative editors
+do not.
+
+\subsection{Discussion}
+\label{sec:exp:discussion}
+
+Compared to generative video editors such as
+Gen-4~Aleph~\citep{runway2025aleph}, which prioritize global
+visual realism, our pipeline prioritizes structured
+controllability and glyph-level fidelity. Generative models
+produce visually compelling outputs, but at the time of writing
+they do not offer guarantees on target-string accuracy or precise
+spatial alignment. The qualitative examples in
+Section~\ref{sec:exp:qualitative} and the ablations in
+Section~\ref{sec:exp:ablation} together suggest that explicitly
+modelling geometry and appearance propagation is a viable route
+when correct glyphs matter, while the naturalistic qualities of
+generative systems remain harder to match with explicit
+compositing. A reasonable reading of these observations is that
+the two approaches are complementary rather than competing, and
+that hybrid systems---generative backgrounds and style with
+glyph-controlled text compositing---are a promising long-term
+direction.
+
 \subsection{Current limitations}
 \label{sec:exp:limits}
 

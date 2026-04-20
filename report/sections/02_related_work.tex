@@ -18,12 +18,20 @@ AnyText~\citep{tuo2024anytext} and its successor
 AnyText2~\citep{tuo2025anytext2} combine a Stable Diffusion
 backbone~\citep{rombach2022stablediffusion} with a text-writing
 network that conditions generation on a target string, producing
-high-quality multilingual scene text. Our pipeline uses AnyText2 as
-its editing backend (Section~\ref{sec:method:s3}). All of these
-systems operate on single images and do not address the additional
-challenges of temporal coherence, per-frame lighting and blur
-adaptation, or propagation of a single edit across many frames of
-video.
+high-quality multilingual scene text. Orthogonally,
+TextMastero~\citep{wang2024textmastero} targets high-quality
+editing across diverse languages and styles, and for the
+specifically cross-language setting, CLASTE~\citep{yang2023claste}
+uses a self-supervised objective to learn cross-script text
+editing. Font-transfer methods such as few-shot style transfer
+between languages~\citep{li2021fewshotfont} and
+Fontify~\citep{xu2026fontify} improve the visual consistency of
+glyphs rendered in a script different from the source font. Our
+pipeline uses AnyText2 as its editing backend
+(Section~\ref{sec:method:s3}). All of these systems operate on
+single images and do not address the additional challenges of
+temporal coherence, per-frame lighting and blur adaptation, or
+propagation of a single edit across many frames of video.
 
 \subsection{Video scene text replacement}
 \label{sec:related:video}
