@@ -11,6 +11,13 @@
 % are visible (rather than anonymous submission).
 \usepackage[final,nonatbib]{style/neurips_2024}
 
+% Suppress the "38th Conference on Neural Information Processing Systems
+% (NeurIPS 2024)" notice that the style file prints at the bottom of the
+% first page --- this is a coursework report, not a NeurIPS submission.
+\makeatletter
+\renewcommand{\@notice}{}
+\makeatother
+
 % --- Packages ----------------------------------------------------------
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
