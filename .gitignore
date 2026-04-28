@@ -46,6 +46,10 @@ saved_videos/
 test_data/
 docs/debug/
 
+# Demo source videos — uploaded to GitHub user-attachments and embedded by URL.
+# README assets like hero_webui.png live in demo/ and ARE tracked.
+demo/*.mp4
+
 code/config/_run_*.yaml
 docs/STRIVE.pdf
 
