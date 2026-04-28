@@ -5,7 +5,7 @@ Automatically translate scene text in video frames, preserving font style, persp
 ## Demo
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/d350ff7c-f3fc-4bfb-95c4-541a5c12cfed" controls autoplay loop muted playsinline width="80%"></video>
+  <video src="https://github.com/user-attachments/assets/578523a3-b6af-4c25-bab5-7c67fb65af0b" controls autoplay loop muted playsinline width="80%"></video>
 </p>
 
 ## Environment Setup
