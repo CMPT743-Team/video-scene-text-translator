@@ -1,145 +1,271 @@
-# Plan: Stage Liveness Observability
+# Plan: GPT-Image Stage A Backend
 
 ## Goal
-Make stage hangs visible across three layers (stage code, server, client) so
-no stage in any future run can silently consume 1000+ seconds with zero
-feedback. Pure observability — no cancellation, no synthetic errors, no
-status flip. The user sees "stage 5 stalled at 3m12s, no progress for 180s"
-instead of a frozen tile with no signal.
-
-Context: the S3 `feat(s3): add per-region logging + try/except` fix
-(commit `5fd4a51`) solved the same class of problem at the per-region level
-for S3. This plan extends that pattern to S4/S5 and adds a server watchdog
-+ client stall indicator as defense-in-depth.
+Add a new Stage A text-editor backend that calls OpenAI's `gpt-image-1.5`
+(via `/v1/images/edits`) as an alternative to AnyText2. Motivated by
+side-by-side observation: ChatGPT app produces near-perfect scene-text
+edits on kraft-paper / dot-grid backgrounds where AnyText2 struggles.
+Reproducing app-quality output requires hitting the *edits* endpoint
+(not generations), passing a proper alpha mask, and **client-side
+alpha-compositing the model output back onto the original ROI** — the
+"pixel-perfect outside the mask" guarantee that the app provides
+implicitly.
 
 ## Approach
 
-### Layer 1 — Stage layer (Python, additive timing + heartbeats)
+Plan locally on `master`-derived `feat/gpt_image_backend`; implement on
+the remote machine where `OPENAI_API_KEY` and a payment method live.
 
-Apply a **hybrid logging pattern** (decision 1C) to the unbounded inner
-loops in S4 and S5:
-- Per-track INFO entry/exit logs (coarse, matches S3's spirit).
-- Periodic heartbeat INFO log every ~30s inside the inner loop:
-  `"S5 composite: 120/681 ROIs, elapsed 45s"`.
-- DEBUG per-ROI detail so drill-down is available without flooding `<LogPanel>`.
-- `try/except` with `time.monotonic()` elapsed log around each long call;
-  re-raise so the normal failure path still fires (matches S3 fix).
+### Six design decisions (settled)
 
-S1 already has stage-level elapsed logs. S2 is pure matrix math (fast,
-skip). S3 has per-region wraps (commit 5fd4a51, skip). Only S4 and S5 +
-the S5 refiner's `torch.load` need changes.
+1. **Endpoint = `/v1/images/edits`** (image + RGBA mask + prompt).
+   Generations endpoint is the failure mode that originally motivated
+   this plan. Reject.
+2. **Model = config-driven, default `gpt-image-1.5`.** Cheaper, faster,
+   and higher-quality than `gpt-image-1` per OpenAI's own data
+   (~20% cheaper output token, 4× faster, better benchmarks). Allow
+   `gpt-image-1`, `gpt-image-1-mini` (smoke testing — ~70% cheaper than
+   1.5), and `gpt-image-2` (when pricing surfaces) via a single
+   `text_editor.gpt_image_model` yaml string.
+3. **Client-side alpha-composite ON by default.** `gpt-image-*` is
+   widely reported to "soft-mask" and re-render the whole canvas even
+   with `input_fidelity:"high"`. AnyText2 doesn't need this because
+   it's trained for masked editing — GPT does. S5's existing feather
+   covers the canonical→frame quad boundary, NOT the text-region
+   boundary inside the canonical, so the composite is not redundant
+   with S5. Add `gpt_image_client_composite: bool = True` so a future
+   model that respects masks can disable.
+4. **Skip the AnyText2 adaptive-mask flow.** Add only if testing shows
+   GPT fails on long-to-short translations.
+5. **Secrets via `OPENAI_API_KEY` env var**, never YAML. Mirrors the
+   `translation.api_key: null` pattern. Validator errors loud if the
+   env var is missing when backend is selected.
+6. **Reuse `text_editor.roi_context_expansion: 0.3`** — same knob as
+   AnyText2 so both backends share the cropping behavior.
 
-### Layer 2 — Server watchdog (log-only, no cancel)
+### Architecture fit
 
-Add a daemon thread in `pipeline_runner.run_pipeline_job` that tracks
-`time.monotonic() - last_emit_ts`. If the gap exceeds
-`PIPELINE_LIVENESS_TIMEOUT_S` (default 180s, env-overridable), emit
-`src_logger.error("no progress for Xs, stage may be hung")` — which flows
-through the existing `_PipelineLogHandler` → SSE `log` event →
-`<LogPanel>` shows a red line. Watchdog resets on every `emit()` call, so
-healthy stages with heartbeats never trigger it. Watchdog does NOT
-synthesize `ErrorEvent`, does NOT flip `record.status`, does NOT cancel
-the worker — real exceptions still use the existing
-`JobManager._run_job` catch path (`server/app/jobs.py:343`).
+The Stage A integration boundary is `BaseTextEditor.edit_text(roi_image,
+target_text, edit_region) -> np.ndarray` ([base_text_editor.py:18](code/src/models/base_text_editor.py)).
+Drop the new backend behind that ABC; the factory in
+[s3_text_editing.py:174](code/src/stages/s3_text_editing.py) already
+has a `"stage_a"` slot that currently raises NotImplementedError —
+replace it with a `"gpt_image"` branch. No upstream (S2) or downstream
+(S4 LCM/BPN, S5 composite) changes needed.
 
-### Layer 3 — Client stall indicator (state-field, decision 3A)
+### Reuse from `anytext2_editor.py`
 
-Add `stalledMs: number` to `JobStreamState`. Inside the existing
-`setInterval` tick in `useJobStream`, compare `activeStageElapsedMs` to
-`STALL_THRESHOLD_MS` (e.g. 180_000) and update `stalledMs` in the same
-setState call. Clear on stage change / terminal (piggy-backs on the
-existing `activeStageElapsedMs = 0` reset sites). `<StageProgress>`
-reads `stalledMs` and renders a warning badge on the active tile when
-> 0. Single source of truth so a future `<StatusBand>` chip / `<LogPanel>`
-pill can reuse it without re-deriving the threshold.
+The 700-line AnyText2 editor contains useful pure helpers:
+- `_prepare_roi(image, min_gen_size)` — upscale + 64-align + pad with
+  `BORDER_REPLICATE`, returns `(prepared_image, content_rect, scale)`.
+  GPT's edits endpoint works at any size up to 4096 and doesn't have
+  the 64-alignment requirement, so the GPT backend doesn't need this
+  helper directly — but the upscale-small-ROI logic + content_rect
+  bookkeeping pattern is worth mirroring.
+- `_extract_text_color(image)` — returns `#rrggbb`. GPT prompt benefits
+  from including the dominant text color verbatim.
+
+Refactor decision: **inline a slimmer ROI-prep into the new file**
+rather than over-engineering a shared module. AnyText2's `_prepare_roi`
+is tightly tuned to AnyText2's 64-alignment quirk; GPT only needs a
+min-size upscale. Premature abstraction has a higher cost than 30
+duplicated lines.
+
+### API setup + billing tutorial (will live in this plan)
+
+For the remote-machine setup. Run through this BEFORE coding:
+
+1. **Account + payment.** platform.openai.com → Settings → Billing
+   → add a credit card. OpenAI billing is independent from the
+   AnyText2 server.
+2. **Spend cap.** Settings → Limits → set monthly hard cap (e.g. $20)
+   and soft-cap email at $10 *before* the first call. A 500-frame
+   video at 2 ROIs/frame on `gpt-image-1.5` high quality is roughly
+   $130; the cap is your guardrail against runaway iteration.
+3. **API key.** Settings → API keys → "Create new secret key" → copy
+   `sk-...` once (never shown again).
+4. **Org verification.** `gpt-image-*` requires org verification
+   (OpenAI ID/phone). Do this before the smoke test or the call will
+   403.
+5. **Env var on the remote machine.** Add to your shell profile:
+   ```
+   export OPENAI_API_KEY="sk-..."
+   ```
+   Or store in `~/.openai/key` and source it. **Never** put it in any
+   `code/config/*.yaml` — those get committed.
+6. **SDK install.** `pip install openai>=1.50` inside the `vc_final`
+   conda env. Use `third_party/install_openai.sh` for a reproducible
+   install command.
+7. **Smoke test.** Before plumbing into the pipeline:
+   ```python
+   from openai import OpenAI
+   client = OpenAI()
+   with open("test.png", "rb") as img, open("mask.png", "rb") as mask:
+       r = client.images.edit(
+           model="gpt-image-1-mini",  # cheap for smoke
+           image=img,
+           mask=mask,
+           prompt='handwritten English word "Example" in black ink',
+           input_fidelity="high",
+           quality="low",
+           size="1024x1024",
+       )
+   ```
+   Confirm `r.data[0].b64_json` is non-empty and the result image
+   preserves background. **Mask polarity:** transparent (alpha=0) =
+   edit; opaque = preserve. Trust the OpenAI spec, not third-party
+   guides that have it inverted.
+8. **Concurrency + 429s.** The SDK has built-in retry with backoff.
+   Cap concurrent in-flight requests with a `threading.Semaphore(4)`
+   in the editor — fan-out from S3's per-track loop will otherwise
+   trip rate limits.
+9. **Cost telemetry.** Each response includes a `usage` field. Log
+   per-call cost so a post-mortem can attribute spend. Keep a
+   running total in the editor instance, log on `__del__`.
+
+### Pricing reference (early 2026, per 1024×1024 output)
+
+| Model | Low | Medium | High |
+|---|---|---|---|
+| gpt-image-1 | ~$0.011 | — | ~$0.167 |
+| gpt-image-1.5 | $0.009 | $0.034 | $0.133 |
+| gpt-image-1-mini | $0.005 | — | $0.036 |
+
+`/edits` adds ~$0.01–0.03 per call for input-image + prompt tokens.
+Batch API halves rates (out of scope for this plan; useful future
+optimization).
 
 ## Files to Change
 
-### Stage layer
-- [x] `code/src/stages/s4_propagation/stage.py` — wrap `inpainter.inpaint()` calls at lines 231 + 251 with per-track INFO entry/exit + elapsed timing + `try/except`. Add periodic heartbeat (30s) inside the main for-loop. No behavior change on success.
-- [x] `code/src/stages/s5_revert/stage.py` — wrap `predict_delta_H` (line 533), `_pre_inpaint_region` (line 681), `composite_roi_into_frame_seamless` (line 693). Upgrade existing DEBUG exception logs to WARNING with elapsed time. Add periodic heartbeat (30s or every N frames) inside Pass 2 composite loop (line 608+) reporting frame_idx / total + elapsed.
-- [x] `code/src/stages/s5_revert/refiner.py` — wrap `torch.load` call at line 123 with INFO entry + elapsed exit log + `try/except`. This is a one-shot first-call blocker; wrapping surfaces slow checkpoint loads.
+### Code
 
-### Server layer
-- [x] `server/app/pipeline_runner.py` — add `_LivenessWatchdog` helper class: daemon thread, resets on every `emit`, fires `src_logger.error(...)` on timeout. Wire into `run_pipeline_job`: instrument the emit closure to update timestamp, start the watchdog in the `try:` block, stop in `finally:`. Read `PIPELINE_LIVENESS_TIMEOUT_S` env var with 180s default. Document in module docstring.
+- [ ] (new) `code/src/models/gpt_image_editor.py` — `class
+  GPTImageEditor(BaseTextEditor)`. Lazy-imports `openai`, calls
+  `client.images.edit` with image + RGBA mask + prompt, alpha-composites
+  the result back onto the original ROI using the same mask. Threading
+  semaphore for concurrency cap. Cost-telemetry log. ~250–300 lines.
+- [ ] `code/src/stages/s3_text_editing.py:174` — replace the
+  `NotImplementedError` `"stage_a"` branch with a `"gpt_image"` branch
+  that constructs `GPTImageEditor(self.config)`.
+- [ ] `code/src/config.py:271` — extend `TextEditorConfig`:
+  ```
+  gpt_image_model: str = "gpt-image-1.5"
+  gpt_image_quality: str = "high"          # low | medium | high | auto
+  gpt_image_input_fidelity: str = "high"   # low | high (1.x only)
+  gpt_image_size: str = "auto"             # auto | 1024x1024 | 1024x1536 | 1536x1024
+  gpt_image_mask_feather_px: int = 2
+  gpt_image_client_composite: bool = True
+  gpt_image_max_concurrency: int = 4
+  gpt_image_request_timeout_s: int = 120
+  ```
+  Plus validator: `backend == "gpt_image"` requires `OPENAI_API_KEY`
+  in `os.environ`; raise with a clear message pointing at the tutorial.
+- [ ] (new) `code/src/models/_gpt_image_prompt.py` — small helper for
+  building the prompt string from `target_text` + extracted text color
+  + a fixed style-preservation suffix. Pure function, easy to test.
 
-### Client layer
-- [x] `web/src/lib/stages.ts` — add `STALL_THRESHOLD_MS = 180_000` constant next to `STAGES`.
-- [x] `web/src/hooks/useJobStream.ts` — add `stalledMs: number` to `JobStreamState` + `initialState()` + reset paths. Update `setInterval` tick to compute stall and setState. Reset on stage_start / stage_complete / done / error / status-sync-terminal / unmount / reset.
-- [x] `web/src/components/StageProgress.tsx` — render stall badge on the active tile when `stalledMs > 0`. Use existing design tokens from `globals.css`; match `.warn-pill` styling if one exists.
+### Config
+
+- [ ] (new) `code/config/adv_gpt.yaml` — copy of `adv.yaml` with
+  `text_editor.backend: "gpt_image"`. Lets the teammate switch backends
+  by changing `--config` rather than editing yaml in place.
+
+### Third-party
+
+- [ ] (new) `third_party/install_openai.sh` — single-line
+  `pip install 'openai>=1.50'` with conda-env activation prelude
+  matching the other install scripts.
 
 ### Tests
-- [x] `server/tests/test_pipeline_runner.py` — watchdog tests: fires after silence, resets on emit, cleans up on exception / normal exit. Use a fake `PipelineRunner` that sleeps longer than the timeout.
-- [x] `web/src/hooks/__tests__/useJobStream.test.ts` — `stalledMs` transitions: starts 0, increments past threshold, resets on stage change / terminal. Use `vi.useFakeTimers()`.
-- [x] `web/src/components/__tests__/StageProgress.test.tsx` — renders stall badge when `stalledMs > 0`, hides when 0, positioned on the active tile.
+
+- [ ] (new) `code/tests/models/test_gpt_image_editor.py` — mocks the
+  `openai` client. Verifies (1) endpoint = `images.edit` not
+  `images.generate`; (2) RGBA mask polarity (transparent = edit area);
+  (3) `input_fidelity="high"` is passed; (4) alpha-composite preserves
+  pixels outside the mask byte-identical when composite flag on;
+  (5) raises clear error when `OPENAI_API_KEY` is missing;
+  (6) concurrency semaphore caps in-flight calls.
+- [ ] (new) `code/tests/models/test_gpt_image_editor_e2e.py` — gated by
+  `pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"))`. Single
+  real call against `gpt-image-1-mini` low quality on a tiny ROI to
+  confirm wire-up; logged cost should be < $0.01 per run. Skipped in
+  CI by default.
+
+### Docs
+
+- [ ] `code/CLAUDE.md` (or root) — add `gpt-image` row to the Stack
+  table and a Gotchas entry: "OPENAI_API_KEY required for gpt_image
+  backend; never put the key in YAML."
 
 ## Risks
 
-- **False positives on legitimate slow stages.** S3's AnyText2 call can take 8–15 min on multi-region clips; single-region waits within that can be >60s. Mitigation: rely on stage-layer heartbeats (new for S4/S5, existing for S3) to reset the watchdog clock. Flat 180s threshold + env var override. If S3 single-region waits trip it, add a poll-loop heartbeat to `anytext2_editor.py` as a follow-up (out of scope here).
-- **Log-panel flood from heartbeats.** 30s heartbeat across 5 stages → ~10 extra INFO lines in a typical 3-minute run. Well under the 500-entry cap. Per-ROI detail stays at DEBUG so `<LogPanel>` doesn't see it.
-- **Client `stalledMs` timer precision.** `Math.floor(elapsed / 1000) * 1000` already used for `activeStageElapsedMs`; reuse the same rounding so the threshold comparison is stable (no flicker at the boundary). Verify no off-by-one in test.
-- **Dev-server churn during implementation.** Uvicorn `--reload` will trigger on every pipeline-code edit. Expect noisy reloads; not a correctness concern.
+- **Soft-mask still bleeds even with composite.** The composite paste-back
+  guarantees pixels outside the mask are byte-identical. But pixels
+  *inside* the mask, near the boundary, are GPT's output — which can
+  carry color/lighting that doesn't match the surrounding scene. The
+  2-px feather (`gpt_image_mask_feather_px`) softens this. If still
+  visible, fall back to D4 (adaptive-mask flow) or shrink the mask to
+  the literal text strokes via Hi-SAM (already wired in S4).
+- **Mask polarity bugs are silent.** OpenAI's spec says transparent=edit;
+  several third-party guides invert it. Test #2 above pins polarity in
+  CI so this can't drift.
+- **Org-verification gating.** `gpt-image-*` calls 403 without
+  verification; error is unambiguous but the first-time-on-remote
+  failure can still cost a debugging hour. Tutorial step 4 calls this
+  out.
+- **Cost spike on long videos.** A 1500-frame video × 3 ROIs × 1.5-high
+  ≈ $600. The hard cap at $20 is non-negotiable for the project budget;
+  plan to use `gpt-image-1-mini` at `low` quality for any full-video
+  iteration and reserve `1.5/high` for the final render.
+- **Rate-limit tail latency.** Per-track fan-out without a concurrency
+  cap will hit 429s on TPM (tokens-per-minute) bucket. The semaphore
+  is the mitigation; if 429s persist, drop max_concurrency to 2.
+- **No streaming/long-poll.** `images.edit` blocks for 5–30s per call.
+  S3's per-track wraps + 30s heartbeats (from the prior liveness work)
+  already cover this — the watchdog log will surface a wedged GPT
+  call within 180s.
+- **Output format drift.** `gpt-image-1.5` returns base64 PNG by
+  default; `gpt-image-2` may default to a URL or different encoding.
+  Code should handle both (`b64_json` vs `url`) and fall back loudly.
 
 ## Done When
-- [ ] S4 and S5 emit per-track INFO entry/exit + periodic heartbeat logs during a full pipeline run (verified in `<LogPanel>`).
-- [ ] Forcing a silent 200s sleep in S5 (test fixture) surfaces a red `"no progress for 180s"` log line in the browser within ~180s.
-- [ ] `<StageProgress>` active tile shows a stall badge after 180s on a healthy-but-slow stage; badge clears when the stage completes.
-- [ ] A healthy end-to-end pipeline run (on a short clip) produces zero stall warnings and zero watchdog fires.
-- [ ] `PIPELINE_LIVENESS_TIMEOUT_S=60 ./server/scripts/dev.sh` tightens the threshold for manual stall testing.
-- [ ] No regression in existing unit/integration tests (`cd code && python -m pytest tests/ -v`, `cd server && python -m pytest tests/ -v`, `cd web && npm run test`).
-- [ ] Lint + type-check pass (`ruff check code/`, `cd web && npm run type-check`).
+
+- [ ] Single-call smoke test on `gpt-image-1-mini` returns a non-empty
+  result with byte-identical pixels outside the mask (verified
+  programmatically).
+- [ ] Same kraft-paper test image as the screenshot the teammate sent
+  produces an "Example"-replaced output that visually matches the
+  ChatGPT app result (subjective, but the bar is set by that screenshot).
+- [ ] Pipeline run with `--config config/adv_gpt.yaml` on a 30-frame
+  test clip completes end-to-end with `gpt-image-1-mini` and produces
+  a watchable output. Cost logged < $0.50.
+- [ ] Same run with `text_editor.gpt_image_model: gpt-image-1.5,
+  quality: high` produces visibly better text rendering than the
+  AnyText2 baseline on the same clip.
+- [ ] All unit tests pass (`cd code && python -m pytest tests/ -v`).
+  E2E test is gated on `OPENAI_API_KEY` and skipped in normal runs.
+- [ ] Lint clean (`ruff check code/`).
 - [ ] Code review approved (`@reviewer`).
-- [ ] Changes committed as atomic commits (stage layer, server layer, client layer, tests — one per commit if size permits).
+- [ ] Atomic commits — split: (1) config + ABC plumbing,
+  (2) editor implementation, (3) tests, (4) install script + docs.
 
 ## Progress
-- [x] Step 1 — S4/S5 stage-layer wraps + heartbeats (code/src/stages/). 446 pytest pass, ruff clean on touched files.
-- [x] Step 2 — S5 refiner `torch.load` wrap. Covered in Step 1 commit.
-- [x] Step 3 — Server watchdog in `pipeline_runner.py` + tests. 97 pytest pass (87 baseline + 10 new), ruff clean.
-- [x] Step 4 — Client `stalledMs` state + hook tests.
-- [x] Step 5 — `<StageProgress>` stall badge + component tests. 158 web test pass (129 baseline + 29 new across hook + component), type-check clean.
-- [ ] Step 6 — End-to-end manual test: force a stall with `PIPELINE_LIVENESS_TIMEOUT_S=30` + a sleep, verify UI surfaces it.
-- [ ] Step 7 — Review + commit.
 
-## Out of Scope (Follow-ups)
-
-This plan is **pure observability** — user sees the stall, but cannot
-recover from it without external action. Recovery-from-stall is a
-separate concern, captured here so it isn't lost:
-
-- **Why "no heartbeat for N seconds" ≠ "system is dead":** a stuck CUDA
-  kernel, a hung AnyText2 socket, and a dead process all look identical
-  from inside the Python worker. The watchdog thread only knows "emit()
-  has not been called." That is probabilistic evidence, not proof. Any
-  auto-restart built on this signal will eventually kill a legitimately
-  slow run.
-
-- **Option A — process-level restart.** `supervisorctl restart uvicorn`
-  or kill+relaunch `dev.sh`. Guaranteed clean. Kills the whole server
-  and interrupts other sessions. No code change. Viable short-term
-  recovery path for the demo today.
-
-- **Option B — relax `DELETE /api/jobs/{id}` to accept running jobs.**
-  Flip `record.status = "failed"`, emit `ErrorEvent`, UI clears. Trap:
-  the stuck worker thread still leaks until a real process restart
-  (Python cannot force-terminate a thread blocked in a CUDA kernel).
-  The UI would *appear* to recover while a zombie worker keeps holding
-  the GPU. Do not pursue.
-
-- **Option C — cancellation tokens through the pipeline** (previously
-  "decision 2B"). Thread a `threading.Event` into every stage; stages
-  check it at loop boundaries; watchdog or a user-triggered endpoint
-  sets it on timeout; pipeline raises `PipelineCancelled` → existing
-  `JobManager._run_job` error path fires → browser renders
-  `<FailureCard>`. The architecturally clean answer. Scope: every stage
-  gains a cancellation surface, `DELETE` on running job becomes the
-  user-triggered path, watchdog can optionally trigger it after a hard
-  ceiling (e.g. 20 min). Large enough to deserve its own plan.
-
-- **Option D — external health probe + container restart policy.** Add
-  a `/api/health` probe that verifies worker-thread responsiveness;
-  Docker/systemd restarts the container on failure. Doesn't solve
-  per-job recovery; restarts everything. Orthogonal to this work.
-
-**Recommended follow-up sequencing:** Option A today (manual SSH
-restart), Option C when there's appetite for the cross-stage change.
-Skip B entirely.
+- [ ] Step 1 — local: scaffolding + config + factory branch
+  (`config.py`, `s3_text_editing.py`, empty `gpt_image_editor.py`
+  with imports + class skeleton). Smoke-test the factory wiring with
+  a stub backend that returns the input unchanged.
+- [ ] Step 2 — remote: API setup + billing per the tutorial above.
+  One-time. Verify smoke test in Python REPL works before continuing.
+- [ ] Step 3 — remote: implement `GPTImageEditor.edit_text` —
+  resize/upscale, build RGBA mask, call `images.edit`, decode b64,
+  alpha-composite, return BGR. Iterate against the kraft-paper
+  reference image until output matches the app screenshot.
+- [ ] Step 4 — remote: prompt-helper module + dominant-color
+  extraction. A/B with and without color hint in the prompt.
+- [ ] Step 5 — remote: concurrency cap + cost telemetry + retry
+  hardening. Verify under fan-out from a 30-frame multi-track video.
+- [ ] Step 6 — remote: tests (unit with mocks; gated e2e).
+- [ ] Step 7 — remote: end-to-end run on 30-frame clip with
+  `adv_gpt.yaml`. Compare side-by-side against AnyText2 output.
+- [ ] Step 8 — remote: review (`@reviewer`), commit splits, push.
